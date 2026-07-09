@@ -1,0 +1,7 @@
+{
+  "platforms": ["apple"],
+  "apple": {
+    "modules": ["SnagCutoutModule"],
+    "podspecPath": "ios/SnagCutout.podspec"
+  }
+}

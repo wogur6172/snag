@@ -1,0 +1,11 @@
+{
+  "name": "snag-cutout",
+  "version": "0.1.0",
+  "description": "Local iOS Vision cutout module for Snag.",
+  "private": true,
+  "main": "index.js",
+  "peerDependencies": {
+    "expo": "*",
+    "expo-modules-core": "*"
+  }
+}

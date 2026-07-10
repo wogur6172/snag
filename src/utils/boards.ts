@@ -83,7 +83,7 @@ export const BOARD_SOCIAL_LIMITS = {
   membersPerBoard: 8,
   snagsPerBoard: 60,
 } as const;
-export const SNAG_APP_DOWNLOAD_URL = 'https://snag.app/download';
+export const SNAG_APP_DOWNLOAD_URL = 'https://apps.apple.com/app/id6789531333';
 
 export type BoardLimitKind = keyof typeof BOARD_SOCIAL_LIMITS;
 

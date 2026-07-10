@@ -132,6 +132,33 @@ describe('menu source layout', () => {
     assert.match(source, /tintColor=\{profileNameDirty \? INK : 'rgba\(255, 255, 255, 0\.54\)'\}/);
   });
 
+  it('shows tappable email, Instagram, and TikTok destinations in settings', () => {
+    const source = getFunctionSource('SettingsOverlay', 'CategoryBackgroundPicker');
+    const iconSource = getFunctionSource('SettingsContactIcon', 'SettingsOverlay');
+
+    assert.match(appSource, /import \* as Linking from 'expo-linking';/);
+    assert.match(appSource, /SNAG_PUBLIC_LINKS/);
+    assert.match(appSource, /openSnagPublicLinkAsync/);
+    assert.match(source, /SNAG_PUBLIC_LINKS\.map\(\(link\) =>/);
+    assert.match(source, /<SettingsContactIcon id=\{link\.id\} \/>/);
+    assert.match(source, /openSnagPublicLinkAsync\(link\.url, Linking\.openURL\)/);
+    assert.match(source, /accessibilityLabel=\{link\.accessibilityLabel\}/);
+    assert.match(source, /\{link\.label\}/);
+    assert.match(source, /\{link\.value\}/);
+    assert.match(source, /arrow\.up\.right/);
+    assert.match(source, /Could not open Snag public link/);
+    assert.match(iconSource, /case 'email'/);
+    assert.match(iconSource, /case 'instagram'/);
+    assert.match(iconSource, /case 'tiktok'/);
+    assert.match(iconSource, /envelope\.fill/);
+    assert.match(iconSource, /<Svg/);
+    assert.match(appSource, /settingsContactList: \{/);
+    assert.match(appSource, /settingsContactRow: \{/);
+    assert.match(appSource, /settingsContactBrandIcon: \{/);
+    assert.match(appSource, /settingsContactLabel: \{/);
+    assert.match(appSource, /settingsContactValue: \{/);
+  });
+
   it('moves social limit helper copy into settings instead of the board lobby', () => {
     const settingsSource = getFunctionSource('SettingsOverlay', 'CategoryHeaderControl');
     const boardSource = getFunctionSource('BoardView', 'BoardGrid');

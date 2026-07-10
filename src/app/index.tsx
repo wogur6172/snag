@@ -4,6 +4,7 @@ import { GlassView } from 'expo-glass-effect';
 import * as Haptics from 'expo-haptics';
 import { Image } from 'expo-image';
 import * as ImagePicker from 'expo-image-picker';
+import * as Linking from 'expo-linking';
 import { SymbolView } from 'expo-symbols';
 import { Gesture, GestureDetector } from 'react-native-gesture-handler';
 import { Fragment, type ComponentProps, type ReactNode, useCallback, useEffect, useMemo, useRef, useState } from 'react';
@@ -12,7 +13,6 @@ import {
   Easing,
   InteractionManager,
   Keyboard,
-  Linking,
   type NativeScrollEvent,
   type NativeSyntheticEvent,
   PanResponder,
@@ -159,6 +159,7 @@ import {
   type ManualCutoutMaskPoint,
   smoothCameraZoom,
 } from '@/utils/manual-cutout';
+import { openSnagPublicLinkAsync, SNAG_PUBLIC_LINKS } from '@/utils/public-links';
 import {
   appendPendingSnag,
   applySnagTransform,
@@ -3955,6 +3956,46 @@ function BoardMembersTray({
   );
 }
 
+function SettingsContactIcon({
+  id,
+}: {
+  id: typeof SNAG_PUBLIC_LINKS[number]['id'];
+}) {
+  const color = 'rgba(255, 255, 255, 0.82)';
+
+  switch (id) {
+    case 'email':
+      return <SymbolView name={symbolName('envelope.fill')} size={14} tintColor={color} weight="semibold" />;
+    case 'instagram':
+      return (
+        <Svg height={17} viewBox="0 0 24 24" width={17}>
+          <Path
+            d="M7 2h10a5 5 0 0 1 5 5v10a5 5 0 0 1-5 5H7a5 5 0 0 1-5-5V7a5 5 0 0 1 5-5Z"
+            fill="none"
+            stroke={color}
+            strokeWidth={1.9}
+          />
+          <Path
+            d="M16 11.37A4 4 0 1 1 12.63 8 4 4 0 0 1 16 11.37Z"
+            fill="none"
+            stroke={color}
+            strokeWidth={1.9}
+          />
+          <Path d="M17.5 6.5h.01" stroke={color} strokeLinecap="round" strokeWidth={2.4} />
+        </Svg>
+      );
+    case 'tiktok':
+      return (
+        <Svg height={17} viewBox="0 0 24 24" width={17}>
+          <Path
+            d="M13.5 2.5h3.15c.22 2.08 1.42 3.36 3.65 3.67v3.16a8.2 8.2 0 0 1-3.65-1.1v6.3a6.05 6.05 0 1 1-5.05-5.98v3.26a2.87 2.87 0 1 0 1.9 2.72V2.5Z"
+            fill={color}
+          />
+        </Svg>
+      );
+  }
+}
+
 function SettingsOverlay({
   onChangeProfileName,
   onClose,
@@ -3995,6 +4036,15 @@ function SettingsOverlay({
       useNativeDriver: true,
     }).start();
   }, [entrance]);
+
+  async function handleOpenPublicLink(link: typeof SNAG_PUBLIC_LINKS[number]) {
+    const opened = await openSnagPublicLinkAsync(link.url, Linking.openURL);
+
+    if (!opened) {
+      console.warn('Could not open Snag public link');
+    }
+  }
+
   return (
     <Animated.View style={[styles.settingsOverlay, { opacity }]}>
       <Pressable accessibilityRole="button" accessibilityLabel="Close settings" onPress={onClose} style={StyleSheet.absoluteFill} />
@@ -4044,6 +4094,34 @@ function SettingsOverlay({
             </Pressable>
           </View>
           <Text style={styles.settingsHint}>{profileName} appears in Social rooms.</Text>
+        </View>
+        <View style={styles.settingsContactList}>
+          {SNAG_PUBLIC_LINKS.map((link) => (
+            <Pressable
+              accessibilityRole="link"
+              accessibilityLabel={link.accessibilityLabel}
+              key={link.id}
+              onPress={() => {
+                void handleOpenPublicLink(link);
+              }}
+              style={({ pressed }) => [styles.settingsContactRow, pressed && styles.settingsPressed]}>
+              <View style={styles.settingsContactBrandIcon}>
+                <SettingsContactIcon id={link.id} />
+              </View>
+              <View style={styles.settingsContactCopy}>
+                <Text style={styles.settingsContactLabel}>{link.label}</Text>
+                <Text ellipsizeMode="middle" numberOfLines={1} style={styles.settingsContactValue}>{link.value}</Text>
+              </View>
+              <View style={styles.settingsContactArrow}>
+                <SymbolView
+                  name={symbolName('arrow.up.right')}
+                  size={12}
+                  tintColor="rgba(255, 255, 255, 0.7)"
+                  weight="bold"
+                />
+              </View>
+            </Pressable>
+          ))}
         </View>
         <View style={styles.settingsHelpSection}>
           <Text style={styles.settingsHelpTitle}>Social limits</Text>
@@ -9838,6 +9916,62 @@ const styles = StyleSheet.create({
     fontSize: 12,
     lineHeight: 15,
     fontWeight: '700',
+  },
+  settingsContactList: {
+    gap: 7,
+  },
+  settingsContactRow: {
+    minHeight: 52,
+    borderRadius: 20,
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 8,
+    paddingLeft: 10,
+    paddingRight: 9,
+    backgroundColor: 'rgba(255, 255, 255, 0.1)',
+    borderWidth: StyleSheet.hairlineWidth,
+    borderColor: 'rgba(255, 255, 255, 0.16)',
+  },
+  settingsContactBrandIcon: {
+    width: 30,
+    height: 30,
+    borderRadius: 15,
+    alignItems: 'center',
+    justifyContent: 'center',
+    backgroundColor: 'rgba(255, 255, 255, 0.1)',
+    borderWidth: StyleSheet.hairlineWidth,
+    borderColor: 'rgba(255, 255, 255, 0.14)',
+  },
+  settingsContactCopy: {
+    flex: 1,
+    minWidth: 0,
+    justifyContent: 'center',
+    gap: 1,
+  },
+  settingsContactLabel: {
+    color: 'rgba(255, 255, 255, 0.5)',
+    fontFamily: Fonts.sans,
+    fontSize: 10,
+    lineHeight: 12,
+    fontWeight: '800',
+  },
+  settingsContactValue: {
+    flex: 1,
+    color: 'rgba(255, 255, 255, 0.82)',
+    fontFamily: Fonts.sans,
+    fontSize: 12,
+    lineHeight: 15,
+    fontWeight: '700',
+  },
+  settingsContactArrow: {
+    width: 28,
+    height: 28,
+    borderRadius: 14,
+    alignItems: 'center',
+    justifyContent: 'center',
+    backgroundColor: 'rgba(255, 255, 255, 0.1)',
+    borderWidth: StyleSheet.hairlineWidth,
+    borderColor: 'rgba(255, 255, 255, 0.14)',
   },
   settingsHelpSection: {
     borderRadius: 24,

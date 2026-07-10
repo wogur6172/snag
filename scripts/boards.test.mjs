@@ -82,7 +82,7 @@ describe('social board rooms', () => {
   });
 
   it('shares Snag as an app download without room-specific join codes', () => {
-    assert.equal(SNAG_APP_DOWNLOAD_URL, 'https://snag.app/download');
+    assert.equal(SNAG_APP_DOWNLOAD_URL, 'https://apps.apple.com/app/id6789531333');
     const copy = getBoardInviteShareCopy({
       inviteCode: 'SN0001',
     });
@@ -91,7 +91,7 @@ describe('social board rooms', () => {
       message: [
         'Start a Snag board with me.',
         '',
-        'Get the app: https://snag.app/download',
+        'Get the app: https://apps.apple.com/app/id6789531333',
       ].join('\n'),
     });
     assert.equal(copy.message.includes('Already in?'), false);

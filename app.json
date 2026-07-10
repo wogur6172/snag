@@ -13,7 +13,8 @@
       "infoPlist": {
         "NSCameraUsageDescription": "Allow Snag to use your camera to capture objects for your collection.",
         "NSPhotoLibraryUsageDescription": "Allow Snag to use your photos so you can turn images into Snags.",
-        "NSPhotoLibraryAddUsageDescription": "Allow Snag to save transparent cutouts to your photo library."
+        "NSPhotoLibraryAddUsageDescription": "Allow Snag to save transparent cutouts to your photo library.",
+        "ITSAppUsesNonExemptEncryption": false
       }
     },
     "android": {

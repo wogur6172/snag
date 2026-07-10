@@ -80,8 +80,10 @@ Recommended MVP limits:
 
 Current image safety behavior:
 - Social board image uploads use WebP preview files under `board-snags/<board-id>/previews/*.webp`.
+- The private `board-snags` bucket rejects files larger than 1 MiB and MIME types other than `image/webp`.
 - If preview generation fails, the app skips the cloud image upload instead of uploading the original PNG.
 - Cleanup also tries the old legacy PNG path so earlier development uploads can be removed when their Snag is deleted.
+- Orphan cleanup must use the Supabase Storage API `remove` operation. Deleting only `storage.objects` rows leaves the underlying files billable.
 
 ## 8. Security Notes
 

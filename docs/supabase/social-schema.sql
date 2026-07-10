@@ -453,11 +453,27 @@ using (
   private.is_board_member(board_drawings.board_id, (select auth.uid()))
 );
 
-insert into storage.buckets (id, name, public)
-values ('board-snags', 'board-snags', false)
-on conflict (id) do update set public = false;
+insert into storage.buckets (
+  id,
+  name,
+  public,
+  file_size_limit,
+  allowed_mime_types
+)
+values (
+  'board-snags',
+  'board-snags',
+  false,
+  1048576,
+  array['image/webp']::text[]
+)
+on conflict (id) do update set
+  public = false,
+  file_size_limit = excluded.file_size_limit,
+  allowed_mime_types = excluded.allowed_mime_types;
 
 -- This creates a private Storage bucket named "board-snags".
+-- Storage rejects files larger than 1 MiB and files that are not WebP images.
 -- The app asks Supabase for short-lived signed URLs when board members load a room.
 -- Supabase owns the storage.objects table.
 

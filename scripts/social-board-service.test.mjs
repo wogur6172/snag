@@ -47,6 +47,8 @@ describe('social board service fallback', () => {
     assert.match(schema, /private\.get_user_joined_board_count\(current_user_id\) >= 3/);
     assert.match(schema, /private\.get_board_member_count\(target_board\.id\) >= 8/);
     assert.match(schema, /private\.get_board_snag_count\(board_snags\.board_id\) < 60/);
+    assert.match(schema, /file_size_limit[^;]*1048576/s);
+    assert.match(schema, /allowed_mime_types[^;]*image\/webp/s);
   });
 
   it('creates a local social profile when Supabase is not configured', async () => {

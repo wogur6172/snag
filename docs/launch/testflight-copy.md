@@ -4,7 +4,7 @@ Copy-ready text for the first iOS beta.
 
 ## Beta Name
 
-Snag
+Snag Board
 
 ## Short Invite Line
 

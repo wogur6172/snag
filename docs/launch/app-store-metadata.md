@@ -1,10 +1,11 @@
-# Snag App Store Metadata
+# Snag Board App Store Metadata
 
 This file is the copy-and-paste base for the first US-focused App Store Connect setup.
 
 ## App Identity
 
-- App name: `Snag`
+- App Store name: `Snag Board`
+- On-device app name: `Snag`
 - Bundle ID: `app.getsnag.snag`
 - SKU: `snag-ios-001`
 - Primary language: `English (U.S.)`
@@ -77,7 +78,7 @@ Use iPhone screenshots with real-looking content, not empty mockups.
 Temporary GitHub Pages target:
 
 ```text
-https://heojaehyuk.github.io/snag/privacy/
+https://wogur6172.github.io/snag/privacy/
 ```
 
 Before submission, publish the final policy from `docs/legal/privacy-policy-draft.md` at this URL or replace the URL with the real support site.
@@ -87,7 +88,7 @@ Before submission, publish the final policy from `docs/legal/privacy-policy-draf
 Temporary GitHub Pages target:
 
 ```text
-https://heojaehyuk.github.io/snag/support/
+https://wogur6172.github.io/snag/support/
 ```
 
 This page can be very simple for the first release: app name, contact email, privacy link, and a short note that Snag is iOS-first.

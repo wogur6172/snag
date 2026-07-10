@@ -76,7 +76,7 @@ Snag is not intended for children under 13.
 
 For privacy or support questions, contact:
 
-wogur6172@gmail.com
+snagboardapp@gmail.com
 ```
 
 ## Support Page Draft
@@ -88,7 +88,7 @@ Snag is an iPhone app for turning real-life things into collectible stickers.
 
 ## Need help?
 
-Email: wogur6172@gmail.com
+Email: snagboardapp@gmail.com
 
 Please include:
 
@@ -122,6 +122,6 @@ Privacy Policy: https://heojaehyuk.github.io/snag/privacy/
 
 ## Before Publishing
 
-- The first release support email is `wogur6172@gmail.com`.
+- The first release support email is `snagboardapp@gmail.com`.
 - Publish the pages through GitHub Pages or another static hosting service.
 - Open both URLs on an iPhone browser before entering them in App Store Connect.

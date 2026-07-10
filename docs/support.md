@@ -9,7 +9,7 @@ Snag is an iPhone app for turning real-life things into collectible stickers.
 
 ## Need Help?
 
-Email: wogur6172@gmail.com
+Email: snagboardapp@gmail.com
 
 Please include:
 

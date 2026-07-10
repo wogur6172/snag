@@ -96,7 +96,7 @@ This page can be very simple for the first release: app name, contact email, pri
 Support email:
 
 ```text
-wogur6172@gmail.com
+snagboardapp@gmail.com
 ```
 
 ## App Review Notes

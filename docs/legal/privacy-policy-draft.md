@@ -101,7 +101,7 @@ You can:
 Support contact:
 
 ```text
-wogur6172@gmail.com
+snagboardapp@gmail.com
 ```
 
 ## Children
@@ -117,7 +117,7 @@ We may update this Privacy Policy as Snag changes. The effective date will be up
 For privacy or support questions, contact:
 
 ```text
-wogur6172@gmail.com
+snagboardapp@gmail.com
 ```
 
 ## App Store Privacy Notes To Prepare

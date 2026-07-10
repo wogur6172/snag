@@ -69,4 +69,4 @@ Snag is not intended for children under 13.
 
 For privacy or support questions, contact:
 
-wogur6172@gmail.com
+snagboardapp@gmail.com

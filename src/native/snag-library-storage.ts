@@ -31,6 +31,23 @@ function ensureLibraryStorage() {
   getImageDirectory().create({ idempotent: true, intermediates: true });
 }
 
+export function resolvePersistedSnagImage(snag: SnagItem): SnagItem {
+  if (snag.kind === 'text' || !snag.imageUri) {
+    return snag;
+  }
+
+  const storedImage = new File(getImageDirectory(), getStoredSnagImageName(snag));
+  const imageUri = resolveStoredSnagImageUri({
+    imageUri: snag.imageUri,
+    storedImageExists: storedImage.exists,
+    storedImageUri: storedImage.uri,
+  });
+
+  return imageUri === snag.imageUri
+    ? snag
+    : { ...snag, imageUri };
+}
+
 export async function loadSnagLibraryAsync(): Promise<SnagLibraryState> {
   ensureLibraryStorage();
 
@@ -45,22 +62,7 @@ export async function loadSnagLibraryAsync(): Promise<SnagLibraryState> {
 
   return {
     ...state,
-    snags: state.snags.map((snag) => {
-      if (snag.kind === 'text' || !snag.imageUri) {
-        return snag;
-      }
-
-      const storedImage = new File(getImageDirectory(), getStoredSnagImageName(snag));
-      const imageUri = resolveStoredSnagImageUri({
-        imageUri: snag.imageUri,
-        storedImageExists: storedImage.exists,
-        storedImageUri: storedImage.uri,
-      });
-
-      return imageUri === snag.imageUri
-        ? snag
-        : { ...snag, imageUri };
-    }),
+    snags: state.snags.map(resolvePersistedSnagImage),
   };
 }
 

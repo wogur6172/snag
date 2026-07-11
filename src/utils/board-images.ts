@@ -99,10 +99,12 @@ export function getBoardSnagPreviewContentType() {
   return BOARD_SNAG_PREVIEW_CONTENT_TYPE;
 }
 
-export function isBoardSnagPreviewEnabled(
-  env: BoardSnagPreviewEnv = process.env as BoardSnagPreviewEnv,
-) {
-  return env.EXPO_PUBLIC_SNAG_BOARD_PREVIEW_ENABLED === 'true';
+export function isBoardSnagPreviewEnabled(env?: BoardSnagPreviewEnv) {
+  const resolvedEnv = env ?? {
+    EXPO_PUBLIC_SNAG_BOARD_PREVIEW_ENABLED: process.env.EXPO_PUBLIC_SNAG_BOARD_PREVIEW_ENABLED,
+  };
+
+  return resolvedEnv.EXPO_PUBLIC_SNAG_BOARD_PREVIEW_ENABLED === 'true';
 }
 
 export function getBoardSnagOriginalStoragePath({

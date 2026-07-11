@@ -274,8 +274,18 @@ describe('menu source layout', () => {
     const source = getFunctionSource('handlePasteBoardSnag', 'handleOpenCategoryTextDialog');
 
     assert.match(source, /pendingSync: true/);
-    assert.match(source, /await uploadAndSaveBoardSnagAsync/);
+    assert.match(source, /await syncPendingBoardSnag/);
     assert.doesNotMatch(source, /const \{ pendingSync, \.\.\.syncedSnag \} = snag/);
+  });
+
+  it('retries cached pending board images without starting duplicate uploads', () => {
+    const pasteSource = getFunctionSource('handlePasteBoardSnag', 'handleOpenCategoryTextDialog');
+
+    assert.match(appSource, /pendingBoardSnagUploadKeysRef/);
+    assert.match(appSource, /const syncPendingBoardSnag = useCallback/);
+    assert.match(appSource, /Object\.entries\(boardSnagsByRoomId\)/);
+    assert.match(appSource, /snag\.pendingSync === true/);
+    assert.match(pasteSource, /await syncPendingBoardSnag\(roomId, storedBoardSnag\)/);
   });
 
   it('moves the board canvas with an Animated value while throttling React scroll state commits', () => {

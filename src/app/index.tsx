@@ -1451,6 +1451,7 @@ export default function SnagApp() {
   const [socialProfile, setSocialProfile] = useState<SocialProfile | null>(null);
   const socialBoardRefreshInFlightRef = useRef(false);
   const cachedSocialBoardSnapshotRef = useRef<SocialBoardCacheState | null>(null);
+  const pendingBoardSnagUploadKeysRef = useRef<Set<string>>(new Set());
   const [categoryGridPreferences, setCategoryGridPreferences] = useState<Record<string, boolean>>({});
   const captureCategoryIdRef = useRef(selectedCategoryId);
 
@@ -1478,6 +1479,31 @@ export default function SnagApp() {
     libraryReady,
   });
   const collectionSurfaceReady = shouldRenderCollectionSurface({ libraryReady });
+
+  const syncPendingBoardSnag = useCallback(async (roomId: string, snag: SnagItem) => {
+    if (!activeSocialClient || snag.pendingSync !== true || snag.kind === 'text' || !snag.imageUri) {
+      return;
+    }
+
+    const uploadKey = `${roomId}:${snag.id}`;
+
+    if (pendingBoardSnagUploadKeysRef.current.has(uploadKey)) {
+      return;
+    }
+
+    pendingBoardSnagUploadKeysRef.current.add(uploadKey);
+
+    try {
+      await uploadAndSaveBoardSnagAsync({
+        client: activeSocialClient,
+        currentMemberId: currentBoardMemberId,
+        roomId,
+        snag,
+      });
+    } finally {
+      pendingBoardSnagUploadKeysRef.current.delete(uploadKey);
+    }
+  }, [activeSocialClient, currentBoardMemberId]);
 
   function requestCategorySnap(reason: CategorySnapReason = 'selection') {
     setCategorySnapRequest((request) => ({
@@ -1651,6 +1677,22 @@ export default function SnagApp() {
   useEffect(() => {
     boardSnagsByRoomIdRef.current = boardSnagsByRoomId;
   }, [boardSnagsByRoomId]);
+
+  useEffect(() => {
+    if (!libraryReady || !activeSocialClient) {
+      return;
+    }
+
+    Object.entries(boardSnagsByRoomId).forEach(([roomId, roomSnags]) => {
+      roomSnags
+        .filter((snag) => snag.pendingSync === true && snag.kind !== 'text' && Boolean(snag.imageUri))
+        .forEach((snag) => {
+          void syncPendingBoardSnag(roomId, snag).catch((error) => {
+            console.warn('Could not retry pending board Snag', error);
+          });
+        });
+    });
+  }, [activeSocialClient, boardSnagsByRoomId, libraryReady, syncPendingBoardSnag]);
 
   useEffect(() => {
     if (mode === 'collection') {
@@ -2160,12 +2202,7 @@ export default function SnagApp() {
           snagsByRoomId: boardSnagsByRoomIdRef.current,
         });
 
-        await uploadAndSaveBoardSnagAsync({
-          client: activeSocialClient,
-          currentMemberId: currentBoardMemberId,
-          roomId,
-          snag: storedBoardSnag,
-        });
+        await syncPendingBoardSnag(roomId, storedBoardSnag);
       }).catch((error) => {
         console.warn('Could not sync pasted board Snag', error);
       });

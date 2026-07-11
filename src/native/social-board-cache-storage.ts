@@ -1,5 +1,6 @@
 import { Directory, File, Paths } from 'expo-file-system';
 
+import { resolvePersistedSnagImage } from '@/native/snag-library-storage';
 import {
   createSocialBoardCacheSnapshot,
   parseSocialBoardCacheSnapshot,
@@ -30,7 +31,21 @@ export async function loadSocialBoardCacheAsync(): Promise<SocialBoardCacheState
     return null;
   }
 
-  return parseSocialBoardCacheSnapshot(await cacheFile.text());
+  const state = parseSocialBoardCacheSnapshot(await cacheFile.text());
+
+  if (!state) {
+    return null;
+  }
+
+  return {
+    ...state,
+    snagsByRoomId: Object.fromEntries(
+      Object.entries(state.snagsByRoomId).map(([roomId, snags]) => [
+        roomId,
+        snags.map(resolvePersistedSnagImage),
+      ]),
+    ),
+  };
 }
 
 export async function saveSocialBoardCacheAsync(state: SocialBoardCacheState) {

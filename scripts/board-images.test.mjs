@@ -1,4 +1,5 @@
 import assert from 'node:assert/strict';
+import { readFileSync } from 'node:fs';
 import { describe, it } from 'node:test';
 
 import {
@@ -16,6 +17,13 @@ import {
 } from '../src/utils/board-images.ts';
 
 describe('board image previews', () => {
+  it('uses an Expo statically inlinable production preview flag', () => {
+    const source = readFileSync(new URL('../src/utils/board-images.ts', import.meta.url), 'utf8');
+
+    assert.match(source, /process\.env\.EXPO_PUBLIC_SNAG_BOARD_PREVIEW_ENABLED/);
+    assert.doesNotMatch(source, /env: BoardSnagPreviewEnv = process\.env/);
+  });
+
   it('keeps social board previews small and cheap to render', () => {
     assert.equal(BOARD_SNAG_PREVIEW_MAX_EDGE, 384);
     assert.equal(BOARD_SNAG_PREVIEW_QUALITY, 0.62);

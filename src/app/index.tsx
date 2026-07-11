@@ -7,6 +7,7 @@ import * as ImagePicker from 'expo-image-picker';
 import * as Linking from 'expo-linking';
 import { SymbolView } from 'expo-symbols';
 import { Gesture, GestureDetector } from 'react-native-gesture-handler';
+import { useSharedValue } from 'react-native-reanimated';
 import { Fragment, type ComponentProps, type ReactNode, useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import {
   Animated,
@@ -73,8 +74,10 @@ import {
   getNextBoardSnagRenderLimit,
   getBoardRoomAfterMemberKick,
   getProgressiveBoardSnags,
+  getViewportCenteredSnagPresentation,
   getVisibleBoardSnags,
   getNextBoardPanOffset,
+  getNextEdgePanOffset,
   getBoardViewportIndicator,
   leaveBoardRoom,
   LOCAL_BOARD_MEMBER_ID,
@@ -86,6 +89,7 @@ import {
   updateBoardMemberDisplayName,
   updateBoardRoomColor,
   type BoardRoom,
+  type SnagViewportSnapshot,
 } from '@/utils/boards';
 import {
   SNAG_CATEGORIES,
@@ -273,8 +277,8 @@ type CopySnagRequest = {
   y: number;
 };
 type TextSnagDialogState =
-  | { categoryId: string; snagId?: string; surface: 'collection' }
-  | { roomId: string; snagId?: string; surface: 'board' };
+  | { categoryId: string; placement?: SnagViewportSnapshot | null; snagId?: string; surface: 'collection' }
+  | { placement?: SnagViewportSnapshot | null; roomId: string; snagId?: string; surface: 'board' };
 type CategoryBackgroundPickerState =
   | { background: SnagCategoryBackgroundOption['id']; backgroundStrength: number; mode: 'create' }
   | { background: SnagCategoryBackgroundOption['id']; backgroundStrength: number; categoryId: string; mode: 'edit' };
@@ -1452,6 +1456,8 @@ export default function SnagApp() {
   const socialBoardRefreshInFlightRef = useRef(false);
   const cachedSocialBoardSnapshotRef = useRef<SocialBoardCacheState | null>(null);
   const pendingBoardSnagUploadKeysRef = useRef<Set<string>>(new Set());
+  const collectionViewportRef = useRef<SnagViewportSnapshot | null>(null);
+  const boardViewportRef = useRef<SnagViewportSnapshot | null>(null);
   const [categoryGridPreferences, setCategoryGridPreferences] = useState<Record<string, boolean>>({});
   const captureCategoryIdRef = useRef(selectedCategoryId);
 
@@ -1479,6 +1485,14 @@ export default function SnagApp() {
     libraryReady,
   });
   const collectionSurfaceReady = shouldRenderCollectionSurface({ libraryReady });
+
+  const handleCollectionViewportChange = useCallback((snapshot: SnagViewportSnapshot) => {
+    collectionViewportRef.current = snapshot;
+  }, []);
+
+  const handleBoardViewportChange = useCallback((snapshot: SnagViewportSnapshot) => {
+    boardViewportRef.current = snapshot;
+  }, []);
 
   const syncPendingBoardSnag = useCallback(async (roomId: string, snag: SnagItem) => {
     if (!activeSocialClient || snag.pendingSync !== true || snag.kind === 'text' || !snag.imageUri) {
@@ -2223,6 +2237,7 @@ export default function SnagApp() {
     setTextSnagDraft('');
     setTextSnagDialog({
       categoryId: selectedCategory.id,
+      placement: collectionViewportRef.current,
       surface: 'collection',
     });
   }
@@ -2237,6 +2252,7 @@ export default function SnagApp() {
     setBoardMembersOpen(false);
     setTextSnagDraft('');
     setTextSnagDialog({
+      placement: boardViewportRef.current,
       roomId: selectedBoardRoom.id,
       surface: 'board',
     });
@@ -2300,11 +2316,17 @@ export default function SnagApp() {
             : snag
         )));
       } else {
-        const presentation = getNewSnagPresentation({
-          preferredSize: 260,
-          viewportHeight: height,
-          viewportWidth: width,
-        });
+        const placement = textSnagDialog.placement;
+        const presentation = placement?.surfaceId === textSnagDialog.categoryId
+          ? getViewportCenteredSnagPresentation({
+              ...placement,
+              preferredSize: 260,
+            })
+          : getNewSnagPresentation({
+              preferredSize: 260,
+              viewportHeight: height,
+              viewportWidth: width,
+            });
         const nextSnag = createTextSnag({
           canvasX: presentation.canvasX,
           canvasY: presentation.canvasY,
@@ -2347,11 +2369,17 @@ export default function SnagApp() {
     } else {
       const roomId = textSnagDialog.roomId;
       const currentRoomSnags = boardSnagsByRoomIdRef.current[roomId] ?? [];
-      const presentation = getNewSnagPresentation({
-        preferredSize: 260,
-        viewportHeight: height,
-        viewportWidth: width,
-      });
+      const placement = textSnagDialog.placement;
+      const presentation = placement?.surfaceId === roomId
+        ? getViewportCenteredSnagPresentation({
+            ...placement,
+            preferredSize: 260,
+          })
+        : getNewSnagPresentation({
+            preferredSize: 260,
+            viewportHeight: height,
+            viewportWidth: width,
+          });
       const nextSnag = createTextSnag({
         canvasX: presentation.canvasX,
         canvasY: presentation.canvasY,
@@ -3569,6 +3597,7 @@ export default function SnagApp() {
                 closeCategoryActions();
               }}
               onTrashDragChange={setTrashDragState}
+              onViewportChange={handleCollectionViewportChange}
               overlayDismissSignal={collectionOverlayDismissSignal}
               selectedAllSnagIds={selectedAllSnagIds}
               selectedCategoryId={selectedCategoryId}
@@ -3608,6 +3637,7 @@ export default function SnagApp() {
                 setBoardMembersOpen(false);
               }}
               onTrashDragChange={setTrashDragState}
+              onViewportChange={handleBoardViewportChange}
               onCreateRoom={handleCreateBoardRoom}
               onJoinRoom={handleJoinBoardRoom}
               room={selectedBoardRoom}
@@ -5940,6 +5970,7 @@ function CollectionView({
   onSwipeToBoard,
   onTransientActionStart,
   onTrashDragChange,
+  onViewportChange,
   overlayDismissSignal,
   selectedAllSnagIds,
   selectedCategoryId,
@@ -5975,6 +6006,7 @@ function CollectionView({
   onSwipeToBoard: () => void;
   onTransientActionStart: () => void;
   onTrashDragChange: (state: TrashDragState) => void;
+  onViewportChange: (snapshot: SnagViewportSnapshot) => void;
   overlayDismissSignal: number;
   selectedAllSnagIds: string[];
   selectedCategoryId: string;
@@ -5999,6 +6031,17 @@ function CollectionView({
   const trashStateRef = useRef<TrashDragState>({ armedId: null, draggingId: null });
   const [measuredHeight, setMeasuredHeight] = useState(0);
   const [horizontalScrollOffsets, setHorizontalScrollOffsets] = useState<Record<string, number>>({});
+  const horizontalScrollOffsetsRef = useRef<Record<string, number>>({});
+  const horizontalScrollerRefs = useRef<ScrollView | null>(null);
+  const collectionEdgePanFrameRef = useRef<number | null>(null);
+  const collectionEdgePanLastTimeRef = useRef<number | null>(null);
+  const collectionEdgePanStateRef = useRef<{
+    categoryId: string;
+    point: SnagBoardPoint;
+    snagId: string;
+  } | null>(null);
+  const collectionViewportOffsetX = useSharedValue(0);
+  const collectionViewportOffsetY = useSharedValue(0);
   const [pasteAnchor, setPasteAnchor] = useState<{
     categoryId: string;
     x: number;
@@ -6020,6 +6063,17 @@ function CollectionView({
     fallbackHeight: fallbackBoardHeight,
     measuredHeight,
   });
+  const reportCollectionViewport = useCallback((categoryId: string, offsetX: number) => {
+    onViewportChange({
+      canvasHeight: boardHeight,
+      canvasWidth: boardWidth,
+      offsetX,
+      offsetY: 0,
+      surfaceId: categoryId,
+      viewportHeight: boardHeight,
+      viewportWidth: width,
+    });
+  }, [boardHeight, boardWidth, onViewportChange, width]);
   const firstCollectionCategoryId = categories.find((item) => !isAllCollectionAutoArranged({ categoryId: item.id }))?.id;
   const [initialCategoryPageOffset] = useState(() => (
     getCategoryPageOffset({
@@ -6087,6 +6141,90 @@ function CollectionView({
     trashState.draggingId,
     width,
   ]);
+
+  useEffect(() => {
+    if (selectedCategoryId === 'all') {
+      return;
+    }
+
+    collectionViewportOffsetX.set(horizontalScrollOffsetsRef.current[selectedCategoryId] ?? 0);
+    reportCollectionViewport(
+      selectedCategoryId,
+      horizontalScrollOffsetsRef.current[selectedCategoryId] ?? 0,
+    );
+  }, [collectionViewportOffsetX, reportCollectionViewport, selectedCategoryId]);
+
+  const stopCollectionEdgePan = useCallback(() => {
+    if (collectionEdgePanFrameRef.current !== null) {
+      cancelAnimationFrame(collectionEdgePanFrameRef.current);
+    }
+
+    collectionEdgePanFrameRef.current = null;
+    collectionEdgePanLastTimeRef.current = null;
+    collectionEdgePanStateRef.current = null;
+  }, []);
+
+  function runCollectionEdgePanFrame(timestamp: number) {
+    const edgePanState = collectionEdgePanStateRef.current;
+
+    if (
+      !edgePanState ||
+      trashStateRef.current.draggingId !== edgePanState.snagId ||
+      trashStateRef.current.armedId !== null
+    ) {
+      stopCollectionEdgePan();
+      return;
+    }
+
+    const currentOffset = horizontalScrollOffsetsRef.current[edgePanState.categoryId] ?? 0;
+    const elapsedMs = collectionEdgePanLastTimeRef.current === null
+      ? 16
+      : timestamp - collectionEdgePanLastTimeRef.current;
+    const nextOffset = getNextEdgePanOffset({
+      allowX: true,
+      allowY: false,
+      bounds: { bottom: height, left: 0, right: width, top: 0 },
+      canvasHeight: boardHeight,
+      canvasWidth: boardWidth,
+      currentOffset: { x: currentOffset, y: 0 },
+      elapsedMs,
+      point: edgePanState.point,
+      viewportHeight: boardHeight,
+      viewportWidth: width,
+    });
+
+    if (nextOffset.x === currentOffset) {
+      stopCollectionEdgePan();
+      return;
+    }
+
+    collectionEdgePanLastTimeRef.current = timestamp;
+    horizontalScrollOffsetsRef.current = {
+      ...horizontalScrollOffsetsRef.current,
+      [edgePanState.categoryId]: nextOffset.x,
+    };
+    collectionViewportOffsetX.set(nextOffset.x);
+    horizontalScrollerRefs.current?.scrollTo({
+      animated: false,
+      x: nextOffset.x,
+    });
+    reportCollectionViewport(edgePanState.categoryId, nextOffset.x);
+    collectionEdgePanFrameRef.current = requestAnimationFrame(runCollectionEdgePanFrame);
+  }
+
+  function updateCollectionEdgePan(categoryId: string, snagId: string, point: SnagBoardPoint) {
+    collectionEdgePanStateRef.current = { categoryId, point, snagId };
+
+    if (collectionEdgePanFrameRef.current === null) {
+      collectionEdgePanFrameRef.current = requestAnimationFrame(runCollectionEdgePanFrame);
+    }
+  }
+
+  useEffect(() => stopCollectionEdgePan, [stopCollectionEdgePan]);
+
+  useEffect(() => {
+    stopCollectionEdgePan();
+  }, [drawingCategoryId, selectedCategoryId, stopCollectionEdgePan]);
 
   useEffect(() => {
     if (measuredHeight <= 0) {
@@ -6287,10 +6425,10 @@ function CollectionView({
     onTrashDragChange(nextState);
   }
 
-  function getCategoryTrashDropZone(categoryId: string): SnagTrashDropZone {
+  function getCategoryTrashDropZone(categoryId: string, scrollX: number): SnagTrashDropZone {
     return getSnagTrashDropZone({
       screenHeight: height,
-      scrollX: horizontalScrollOffsets[categoryId] ?? 0,
+      scrollX,
       viewportHeight: boardHeight,
       viewportWidth: width,
     });
@@ -6299,18 +6437,31 @@ function CollectionView({
   function handleHorizontalScroll(categoryId: string, event: NativeSyntheticEvent<NativeScrollEvent>) {
     const nextOffsetX = event.nativeEvent.contentOffset.x;
 
-    setHorizontalScrollOffsets((currentOffsets) => {
-      const currentOffset = currentOffsets[categoryId] ?? 0;
+    horizontalScrollOffsetsRef.current = {
+      ...horizontalScrollOffsetsRef.current,
+      [categoryId]: nextOffsetX,
+    };
 
-      if (Math.abs(currentOffset - nextOffsetX) < 3) {
-        return currentOffsets;
-      }
+    if (categoryId === selectedCategoryId) {
+      collectionViewportOffsetX.set(nextOffsetX);
+      reportCollectionViewport(categoryId, nextOffsetX);
+    }
 
-      return {
-        ...currentOffsets,
-        [categoryId]: nextOffsetX,
-      };
-    });
+    if (!trashStateRef.current.draggingId) {
+      setHorizontalScrollOffsets((currentOffsets) => {
+        const currentOffset = currentOffsets[categoryId] ?? 0;
+
+        if (Math.abs(currentOffset - nextOffsetX) < 3) {
+          return currentOffsets;
+        }
+
+        return {
+          ...currentOffsets,
+          [categoryId]: nextOffsetX,
+        };
+      });
+    }
+
   }
 
   function suppressBoardPress(durationMs = 480) {
@@ -6334,6 +6485,7 @@ function CollectionView({
   }
 
   function handleSnagInteractionEnd() {
+    stopCollectionEdgePan();
     suppressBoardPress(520);
     setTimeout(() => {
       if (!trashStateRef.current.draggingId) {
@@ -6378,6 +6530,14 @@ function CollectionView({
   }
 
   function handleSnagDragStart(snagId: string) {
+    stopCollectionEdgePan();
+    const currentOffset = horizontalScrollOffsetsRef.current[selectedCategoryId] ?? 0;
+
+    collectionViewportOffsetX.set(currentOffset);
+    setHorizontalScrollOffsets((currentOffsets) => ({
+      ...currentOffsets,
+      [selectedCategoryId]: currentOffset,
+    }));
     clearTransientActions();
     onTransientActionStart();
     onSnagBringToFront(snagId);
@@ -6392,17 +6552,33 @@ function CollectionView({
   }
 
   function handleSnagDragMove(categoryId: string, snagId: string, point: SnagBoardPoint) {
-    const zone = getCategoryTrashDropZone(categoryId);
+    const currentOffset = horizontalScrollOffsetsRef.current[categoryId] ?? 0;
+    const zone = getCategoryTrashDropZone(categoryId, currentOffset);
     const nextArmedId = isSnagInTrashDropZone({ point, zone }) ? snagId : null;
 
     updateTrashState({
       armedId: nextArmedId,
       draggingId: snagId,
     });
+
+    if (nextArmedId) {
+      setHorizontalScrollOffsets((currentOffsets) => ({
+        ...currentOffsets,
+        [categoryId]: currentOffset,
+      }));
+      stopCollectionEdgePan();
+      return;
+    }
+
+    updateCollectionEdgePan(categoryId, snagId, point);
   }
 
   function handleSnagDragEnd(categoryId: string, snagId: string, point: SnagBoardPoint, willDelete?: boolean) {
-    const zone = getCategoryTrashDropZone(categoryId);
+    stopCollectionEdgePan();
+    const zone = getCategoryTrashDropZone(
+      categoryId,
+      horizontalScrollOffsetsRef.current[categoryId] ?? 0,
+    );
     const shouldDelete = willDelete || isSnagInTrashDropZone({ point, zone });
 
     updateTrashState({
@@ -6600,7 +6776,9 @@ function CollectionView({
             : boardHeight;
           const hasStarterBlockingDrawing = (drawingsByCategoryId[category.id] ?? []).length > 0;
           const showStarterPrompts = category.id === firstCollectionCategoryId && !isAllCategory && visibleSnags.length === 0 && !isDrawingCategory && !hasStarterBlockingDrawing;
-          const trashDropZone = trashState.draggingId ? getCategoryTrashDropZone(category.id) : null;
+          const trashDropZone = trashState.draggingId
+            ? getCategoryTrashDropZone(category.id, horizontalScrollOffsets[category.id] ?? 0)
+            : null;
           const boardContent = (
             <Pressable
               delayLongPress={boardPasteLongPressConfig.minDurationMs}
@@ -6685,6 +6863,8 @@ function CollectionView({
                       onTransformEnd={onSnagTransformEnd}
                       onTouchPrepare={handleSnagTouchPrepare}
                       trashDropZone={trashState.draggingId === item.id ? trashDropZone : null}
+                      viewportOffsetX={collectionViewportOffsetX}
+                      viewportOffsetY={collectionViewportOffsetY}
                       x={item.canvasX}
                       y={item.canvasY}
                     />
@@ -6738,6 +6918,7 @@ function CollectionView({
                   horizontal
                   bounces={false}
                   onScroll={(event) => handleHorizontalScroll(category.id, event)}
+                  ref={category.id === selectedCategoryId ? horizontalScrollerRefs : undefined}
                   scrollEventThrottle={16}
                   scrollEnabled={!isDrawingCategory}
                   showsHorizontalScrollIndicator={false}
@@ -6970,6 +7151,7 @@ function BoardView({
   onSwipeToCollection,
   onTransientActionStart,
   onTrashDragChange,
+  onViewportChange,
   room,
   rooms,
   snagLimitCopy,
@@ -6995,6 +7177,7 @@ function BoardView({
   onSwipeToCollection: () => void;
   onTransientActionStart: () => void;
   onTrashDragChange: (state: TrashDragState) => void;
+  onViewportChange: (snapshot: SnagViewportSnapshot) => void;
   room: BoardRoom | null;
   rooms: BoardRoom[];
   snagLimitCopy: ReturnType<typeof getBoardLimitCopy> | null;
@@ -7022,6 +7205,16 @@ function BoardView({
   const [viewportSize, setViewportSize] = useState({ height: 0, width: 0 });
   const [scrollOffset, setScrollOffset] = useState({ x: 0, y: 0 });
   const scrollOffsetRef = useRef(scrollOffset);
+  const boardViewportMeasureRef = useRef<View | null>(null);
+  const boardViewportBoundsRef = useRef({ bottom: height, left: 0, right: width, top: 0 });
+  const boardEdgePanFrameRef = useRef<number | null>(null);
+  const boardEdgePanLastTimeRef = useRef<number | null>(null);
+  const boardEdgePanStateRef = useRef<{
+    point: SnagBoardPoint;
+    snagId: string;
+  } | null>(null);
+  const boardViewportOffsetX = useSharedValue(0);
+  const boardViewportOffsetY = useSharedValue(0);
   const boardPanActiveRef = useRef(false);
   const lastBoardStateCommitAtRef = useRef(0);
   const [boardCanvasOffset] = useState(() => new Animated.ValueXY({ x: 0, y: 0 }));
@@ -7048,6 +7241,33 @@ function BoardView({
     viewportHeight,
     viewportWidth,
   });
+  const reportBoardViewport = useCallback((nextOffset: { x: number; y: number }) => {
+    if (!activeRoomId) {
+      return;
+    }
+
+    onViewportChange({
+      canvasHeight: metrics.canvasHeight,
+      canvasWidth: metrics.canvasWidth,
+      offsetX: nextOffset.x,
+      offsetY: nextOffset.y,
+      surfaceId: activeRoomId,
+      viewportHeight,
+      viewportWidth,
+    });
+  }, [
+    activeRoomId,
+    metrics.canvasHeight,
+    metrics.canvasWidth,
+    onViewportChange,
+    viewportHeight,
+    viewportWidth,
+  ]);
+
+  useEffect(() => {
+    reportBoardViewport(scrollOffsetRef.current);
+  }, [reportBoardViewport]);
+
   useEffect(() => () => {
     if (miniMapHideTimeoutRef.current) {
       clearTimeout(miniMapHideTimeoutRef.current);
@@ -7174,17 +7394,22 @@ function BoardView({
 
   const applyBoardVisualOffset = useCallback((nextOffset: { x: number; y: number }) => {
     scrollOffsetRef.current = nextOffset;
+    boardViewportOffsetX.set(nextOffset.x);
+    boardViewportOffsetY.set(nextOffset.y);
     boardCanvasOffset.setValue({
       x: -nextOffset.x,
       y: -nextOffset.y,
     });
-  }, [boardCanvasOffset]);
+    reportBoardViewport(nextOffset);
+  }, [boardCanvasOffset, boardViewportOffsetX, boardViewportOffsetY, reportBoardViewport]);
 
   const commitBoardScrollOffset = useCallback((
     nextOffset: { x: number; y: number },
     options: { syncVisual?: boolean } = {},
   ) => {
     scrollOffsetRef.current = nextOffset;
+    boardViewportOffsetX.set(nextOffset.x);
+    boardViewportOffsetY.set(nextOffset.y);
 
     if (options.syncVisual !== false) {
       boardCanvasOffset.setValue({
@@ -7193,6 +7418,8 @@ function BoardView({
       });
     }
 
+    reportBoardViewport(nextOffset);
+
     setScrollOffset((currentOffset) => {
       if (currentOffset.x === nextOffset.x && currentOffset.y === nextOffset.y) {
         return currentOffset;
@@ -7200,7 +7427,7 @@ function BoardView({
 
       return nextOffset;
     });
-  }, [boardCanvasOffset]);
+  }, [boardCanvasOffset, boardViewportOffsetX, boardViewportOffsetY, reportBoardViewport]);
 
   const maybeCommitBoardScrollOffset = useCallback((nextOffset: { x: number; y: number }) => {
     const now = Date.now();
@@ -7212,6 +7439,83 @@ function BoardView({
     lastBoardStateCommitAtRef.current = now;
     commitBoardScrollOffset(nextOffset, { syncVisual: false });
   }, [boardPanStateCommitConfig.stateCommitIntervalMs, commitBoardScrollOffset]);
+
+  const stopBoardEdgePan = useCallback(() => {
+    if (boardEdgePanFrameRef.current !== null) {
+      cancelAnimationFrame(boardEdgePanFrameRef.current);
+    }
+
+    boardEdgePanFrameRef.current = null;
+    boardEdgePanLastTimeRef.current = null;
+    boardEdgePanStateRef.current = null;
+  }, []);
+
+  function measureBoardViewport() {
+    boardViewportMeasureRef.current?.measureInWindow((x, y, measuredWidth, measuredHeight) => {
+      boardViewportBoundsRef.current = {
+        bottom: y + measuredHeight,
+        left: x,
+        right: x + measuredWidth,
+        top: y,
+      };
+    });
+  }
+
+  function runBoardEdgePanFrame(timestamp: number) {
+    const edgePanState = boardEdgePanStateRef.current;
+
+    if (
+      !edgePanState ||
+      trashStateRef.current.draggingId !== edgePanState.snagId ||
+      trashStateRef.current.armedId !== null ||
+      !activeRoomId
+    ) {
+      stopBoardEdgePan();
+      return;
+    }
+
+    const currentOffset = scrollOffsetRef.current;
+    const elapsedMs = boardEdgePanLastTimeRef.current === null
+      ? 16
+      : timestamp - boardEdgePanLastTimeRef.current;
+    const nextOffset = getNextEdgePanOffset({
+      allowX: true,
+      allowY: true,
+      bounds: boardViewportBoundsRef.current,
+      canvasHeight: metrics.canvasHeight,
+      canvasWidth: metrics.canvasWidth,
+      currentOffset,
+      elapsedMs,
+      point: edgePanState.point,
+      viewportHeight,
+      viewportWidth,
+    });
+
+    if (nextOffset.x === currentOffset.x && nextOffset.y === currentOffset.y) {
+      stopBoardEdgePan();
+      return;
+    }
+
+    boardEdgePanLastTimeRef.current = timestamp;
+    applyBoardVisualOffset(nextOffset);
+    maybeCommitBoardScrollOffset(nextOffset);
+    showBoardMiniMapTemporarily();
+    boardEdgePanFrameRef.current = requestAnimationFrame(runBoardEdgePanFrame);
+  }
+
+  function updateBoardEdgePan(snagId: string, point: SnagBoardPoint) {
+    boardEdgePanStateRef.current = { point, snagId };
+
+    if (boardEdgePanFrameRef.current === null) {
+      boardEdgePanFrameRef.current = requestAnimationFrame(runBoardEdgePanFrame);
+    }
+  }
+
+  useEffect(() => stopBoardEdgePan, [stopBoardEdgePan]);
+
+  useEffect(() => {
+    stopBoardEdgePan();
+  }, [activeRoomId, drawingRoomId, stopBoardEdgePan]);
 
   useEffect(() => {
     let panStartOffset = scrollOffsetRef.current;
@@ -7376,6 +7680,7 @@ function BoardView({
   }
 
   function handleSnagInteractionEnd() {
+    stopBoardEdgePan();
     suppressBoardPress(520);
     setTimeout(() => {
       if (!trashStateRef.current.draggingId) {
@@ -7422,6 +7727,10 @@ function BoardView({
   }
 
   function handleSnagDragStart(snagId: string) {
+    stopBoardEdgePan();
+    measureBoardViewport();
+    boardViewportOffsetX.set(scrollOffsetRef.current.x);
+    boardViewportOffsetY.set(scrollOffsetRef.current.y);
     clearTransientActions();
     onTransientActionStart();
     if (activeRoomId) {
@@ -7441,9 +7750,17 @@ function BoardView({
       armedId: nextArmedId,
       draggingId: snagId,
     });
+
+    if (nextArmedId) {
+      stopBoardEdgePan();
+      return;
+    }
+
+    updateBoardEdgePan(snagId, point);
   }
 
   function handleSnagDragEnd(roomId: string, snagId: string, point: SnagBoardPoint, willDelete?: boolean) {
+    stopBoardEdgePan();
     const zone = getBoardTrashDropZone();
     const shouldDelete = willDelete || isSnagInTrashDropZone({ point, zone });
 
@@ -7559,13 +7876,25 @@ function BoardView({
     onTextSnagEditRequest(roomId, snagId);
   }
 
-  const visibleBoardSnags = useMemo(() => getVisibleBoardSnags({
-    offsetX: scrollOffset.x,
-    offsetY: scrollOffset.y,
-    snags: getLayeredSnags(snags),
-    viewportHeight,
-    viewportWidth,
-  }), [scrollOffset.x, scrollOffset.y, snags, viewportHeight, viewportWidth]);
+  const visibleBoardSnags = useMemo(() => {
+    const layeredSnags = getLayeredSnags(snags);
+    const visibleSnags = getVisibleBoardSnags({
+      offsetX: scrollOffset.x,
+      offsetY: scrollOffset.y,
+      snags: layeredSnags,
+      viewportHeight,
+      viewportWidth,
+    });
+    const draggingSnagId = trashState.draggingId;
+
+    if (!draggingSnagId || visibleSnags.some((snag) => snag.id === draggingSnagId)) {
+      return visibleSnags;
+    }
+
+    const draggingSnag = layeredSnags.find((snag) => snag.id === draggingSnagId);
+
+    return draggingSnag ? [...visibleSnags, draggingSnag] : visibleSnags;
+  }, [scrollOffset.x, scrollOffset.y, snags, trashState.draggingId, viewportHeight, viewportWidth]);
 
   useEffect(() => {
     if (!activeRoomId || visibleBoardSnags.length <= snagRenderLimit) {
@@ -7715,7 +8044,7 @@ function BoardView({
         width: event.nativeEvent.layout.width,
       })}
       style={styles.boardFrame}>
-      <View style={styles.boardViewport}>
+      <View ref={boardViewportMeasureRef} style={styles.boardViewport}>
         <AnimatedPressable
           delayLongPress={boardPasteLongPressConfig.minDurationMs}
           onLongPress={isDrawingBoard ? undefined : (event) => handleBoardLongPress(room.id, event)}
@@ -7769,6 +8098,8 @@ function BoardView({
                 onTransformEnd={(snagId, transform) => onSnagTransformEnd(room.id, snagId, transform)}
                 onTouchPrepare={handleSnagTouchPrepare}
                 trashDropZone={trashState.draggingId === item.id ? trashDropZone : null}
+                viewportOffsetX={boardViewportOffsetX}
+                viewportOffsetY={boardViewportOffsetY}
                 x={item.canvasX}
                 y={item.canvasY}
               />

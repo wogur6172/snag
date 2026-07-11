@@ -35,12 +35,14 @@ import {
   getBoardEntryLoadingPresentation,
   getRenderableBoardRooms,
   getBoardMiniMapVisibilityConfig,
+  getNextEdgePanOffset,
   getProgressiveBoardSnags,
   getVisibleBoardSnags,
   getNextBoardSnagRenderLimit,
   getNextBoardPanOffset,
   getBoardPanStateCommitConfig,
   getNextBoardScrollOffset,
+  getViewportCenteredSnagPresentation,
   getBoardViewportIndicator,
   leaveBoardRoom,
   LOCAL_BOARD_MEMBER_ID,
@@ -742,6 +744,93 @@ describe('social board rooms', () => {
       }),
       { x: 0, y: 0 },
     );
+  });
+
+  it('places new content in the center of the currently visible viewport', () => {
+    assert.deepEqual(getViewportCenteredSnagPresentation({
+      canvasHeight: 1200,
+      canvasWidth: 1180,
+      offsetX: 420,
+      offsetY: 180,
+      preferredSize: 260,
+      viewportHeight: 700,
+      viewportWidth: 390,
+    }), {
+      canvasX: 485,
+      canvasY: 400,
+      size: 260,
+    });
+
+    assert.deepEqual(getViewportCenteredSnagPresentation({
+      canvasHeight: 900,
+      canvasWidth: 900,
+      offsetX: 850,
+      offsetY: 820,
+      preferredSize: 260,
+      viewportHeight: 500,
+      viewportWidth: 390,
+    }), {
+      canvasX: 640,
+      canvasY: 640,
+      size: 260,
+    });
+  });
+
+  it('moves at one fixed speed anywhere inside the edge zone', () => {
+    const common = {
+      allowX: true,
+      allowY: false,
+      bounds: { bottom: 800, left: 0, right: 390, top: 100 },
+      canvasHeight: 1200,
+      canvasWidth: 1180,
+      currentOffset: { x: 300, y: 200 },
+      elapsedMs: 16,
+      viewportHeight: 700,
+      viewportWidth: 390,
+    };
+
+    assert.deepEqual(
+      getNextEdgePanOffset({ ...common, point: { x: 8, y: 400 } }),
+      getNextEdgePanOffset({ ...common, point: { x: 52, y: 400 } }),
+    );
+    assert.deepEqual(getNextEdgePanOffset({ ...common, point: { x: 8, y: 400 } }), {
+      x: 296.48,
+      y: 200,
+    });
+    assert.deepEqual(getNextEdgePanOffset({ ...common, point: { x: 195, y: 400 } }), {
+      x: 300,
+      y: 200,
+    });
+  });
+
+  it('edge-pans social boards diagonally and stops at canvas bounds', () => {
+    const common = {
+      allowX: true,
+      allowY: true,
+      bounds: { bottom: 800, left: 0, right: 390, top: 100 },
+      canvasHeight: 1200,
+      canvasWidth: 1180,
+      elapsedMs: 32,
+      viewportHeight: 700,
+      viewportWidth: 390,
+    };
+
+    assert.deepEqual(getNextEdgePanOffset({
+      ...common,
+      currentOffset: { x: 300, y: 200 },
+      point: { x: 388, y: 798 },
+    }), {
+      x: 307.04,
+      y: 207.04,
+    });
+    assert.deepEqual(getNextEdgePanOffset({
+      ...common,
+      currentOffset: { x: 0, y: 0 },
+      point: { x: 2, y: 102 },
+    }), {
+      x: 0,
+      y: 0,
+    });
   });
 
   it('keeps board pan visual motion off the React render loop', () => {

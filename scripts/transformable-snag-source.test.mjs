@@ -52,4 +52,16 @@ describe('transformable snag image rendering', () => {
     assert.match(source, /const rotate = Gesture\.Rotation\(\)[\s\S]*?\.onEnd\(\(\) => \{\s*'worklet';/);
   });
 
+  it('keeps a dragged snag under the finger while its viewport edge-pans', () => {
+    assert.match(source, /type SharedValue/);
+    assert.match(source, /viewportOffsetX\?: SharedValue<number>/);
+    assert.match(source, /viewportOffsetY\?: SharedValue<number>/);
+    assert.match(source, /dragStartViewportOffsetX/);
+    assert.match(source, /dragStartViewportOffsetY/);
+    assert.match(source, /viewportDeltaX/);
+    assert.match(source, /viewportDeltaY/);
+    assert.match(source, /nextTranslateX = translateX\.value \+ viewportDeltaX/);
+    assert.match(source, /nextTranslateY = translateY\.value \+ viewportDeltaY/);
+  });
+
 });

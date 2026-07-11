@@ -535,6 +535,40 @@ describe('menu source layout', () => {
     assert.doesNotMatch(collectionSource, /label=\{getCopyActionLabel\(\{ copied: textEditAnchor/);
   });
 
+  it('places new collection and board text in the currently visible viewport', () => {
+    const appSourceSlice = getFunctionSource('SnagApp', 'clampDrawingValue');
+    const collectionSource = getFunctionSource('CollectionView', 'clampDrawingValue');
+    const boardSource = getFunctionSource('BoardView', 'BoardGrid');
+
+    assert.match(appSourceSlice, /collectionViewportRef/);
+    assert.match(appSourceSlice, /boardViewportRef/);
+    assert.match(appSourceSlice, /getViewportCenteredSnagPresentation/);
+    assert.match(appSourceSlice, /placement: collectionViewportRef\.current/);
+    assert.match(appSourceSlice, /placement: boardViewportRef\.current/);
+    assert.match(appSourceSlice, /onViewportChange=\{/);
+    assert.match(collectionSource, /onViewportChange/);
+    assert.match(collectionSource, /surfaceId: categoryId/);
+    assert.match(boardSource, /onViewportChange/);
+    assert.match(boardSource, /surfaceId: activeRoomId/);
+  });
+
+  it('edge-pans collection and board canvases while keeping drag compensation shared', () => {
+    const collectionSource = getFunctionSource('CollectionView', 'clampDrawingValue');
+    const boardSource = getFunctionSource('BoardView', 'BoardGrid');
+
+    assert.match(collectionSource, /collectionEdgePanFrameRef/);
+    assert.match(collectionSource, /runCollectionEdgePanFrame/);
+    assert.match(collectionSource, /getNextEdgePanOffset/);
+    assert.match(collectionSource, /horizontalScrollerRefs/);
+    assert.match(collectionSource, /viewportOffsetX=\{collectionViewportOffsetX\}/);
+    assert.match(boardSource, /boardEdgePanFrameRef/);
+    assert.match(boardSource, /runBoardEdgePanFrame/);
+    assert.match(boardSource, /getNextEdgePanOffset/);
+    assert.match(boardSource, /measureInWindow/);
+    assert.match(boardSource, /viewportOffsetX=\{boardViewportOffsetX\}/);
+    assert.match(boardSource, /viewportOffsetY=\{boardViewportOffsetY\}/);
+  });
+
   it('adds a collection Save action above Copy for transparent image snags', () => {
     const collectionSource = getFunctionSource('CollectionView', 'clampDrawingValue');
     const saveIndex = collectionSource.indexOf('accessibilityLabel="Save snag"');

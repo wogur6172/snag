@@ -48,6 +48,16 @@ export type BoardScrollOffset = {
   y: number;
 };
 
+export type SnagViewportSnapshot = {
+  canvasHeight: number;
+  canvasWidth: number;
+  offsetX: number;
+  offsetY: number;
+  surfaceId: string;
+  viewportHeight: number;
+  viewportWidth: number;
+};
+
 export type BoardVisibleSnag = {
   canvasX: number;
   canvasY: number;
@@ -1005,6 +1015,84 @@ export function getNextBoardPanOffset({
   return {
     x: roundBoardValue(Math.max(0, Math.min(startOffset.x - deltaX, maxX))),
     y: roundBoardValue(Math.max(0, Math.min(startOffset.y - deltaY, maxY))),
+  };
+}
+
+export function getViewportCenteredSnagPresentation({
+  canvasHeight,
+  canvasWidth,
+  offsetX,
+  offsetY,
+  preferredSize = 260,
+  viewportHeight,
+  viewportWidth,
+}: {
+  canvasHeight: number;
+  canvasWidth: number;
+  offsetX: number;
+  offsetY: number;
+  preferredSize?: number;
+  viewportHeight: number;
+  viewportWidth: number;
+}) {
+  const size = Math.max(64, preferredSize);
+  const maxX = Math.max(0, canvasWidth - size);
+  const maxY = Math.max(0, canvasHeight - size);
+  const centeredX = offsetX + (viewportWidth - size) / 2;
+  const centeredY = offsetY + (viewportHeight - size) / 2;
+
+  return {
+    canvasX: roundBoardValue(Math.max(0, Math.min(centeredX, maxX))),
+    canvasY: roundBoardValue(Math.max(0, Math.min(centeredY, maxY))),
+    size,
+  };
+}
+
+export function getNextEdgePanOffset({
+  allowX,
+  allowY,
+  bounds,
+  canvasHeight,
+  canvasWidth,
+  currentOffset,
+  elapsedMs,
+  point,
+  viewportHeight,
+  viewportWidth,
+}: {
+  allowX: boolean;
+  allowY: boolean;
+  bounds: { bottom: number; left: number; right: number; top: number };
+  canvasHeight: number;
+  canvasWidth: number;
+  currentOffset: BoardScrollOffset;
+  elapsedMs: number;
+  point: { x: number; y: number };
+  viewportHeight: number;
+  viewportWidth: number;
+}): BoardScrollOffset {
+  const edgeSize = 56;
+  const distance = 220 * (Math.max(0, Math.min(elapsedMs, 32)) / 1000);
+  const directionX = !allowX
+    ? 0
+    : point.x <= bounds.left + edgeSize
+      ? -1
+      : point.x >= bounds.right - edgeSize
+        ? 1
+        : 0;
+  const directionY = !allowY
+    ? 0
+    : point.y <= bounds.top + edgeSize
+      ? -1
+      : point.y >= bounds.bottom - edgeSize
+        ? 1
+        : 0;
+  const maxX = Math.max(0, canvasWidth - viewportWidth);
+  const maxY = Math.max(0, canvasHeight - viewportHeight);
+
+  return {
+    x: roundBoardValue(Math.max(0, Math.min(currentOffset.x + directionX * distance, maxX))),
+    y: roundBoardValue(Math.max(0, Math.min(currentOffset.y + directionY * distance, maxY))),
   };
 }
 

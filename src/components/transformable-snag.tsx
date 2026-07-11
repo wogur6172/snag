@@ -6,6 +6,7 @@ import Animated, {
   useAnimatedStyle,
   useSharedValue,
   withTiming,
+  type SharedValue,
 } from 'react-native-reanimated';
 import { StyleSheet, Text, View } from 'react-native';
 
@@ -46,6 +47,8 @@ type TransformableSnagProps = {
   onTouchPrepare?: (id: string) => void;
   onTransformEnd?: (id: string, transform: SnagTransformPatch) => void;
   trashDropZone?: SnagTrashDropZone | null;
+  viewportOffsetX?: SharedValue<number>;
+  viewportOffsetY?: SharedValue<number>;
   displaySize?: number;
   initialRotation?: string;
   x?: number;
@@ -118,6 +121,8 @@ export function TransformableSnag({
   onTouchPrepare,
   onTransformEnd,
   trashDropZone,
+  viewportOffsetX,
+  viewportOffsetY,
   x,
   y,
 }: TransformableSnagProps) {
@@ -153,6 +158,13 @@ export function TransformableSnag({
   const isTrashArmed = useSharedValue(0);
   const trashScale = useSharedValue(1);
   const moveActive = useSharedValue(0);
+  const fallbackViewportOffsetX = useSharedValue(0);
+  const fallbackViewportOffsetY = useSharedValue(0);
+  const activeViewportOffsetX = viewportOffsetX ?? fallbackViewportOffsetX;
+  const activeViewportOffsetY = viewportOffsetY ?? fallbackViewportOffsetY;
+  const dragStartViewportOffsetX = useSharedValue(0);
+  const dragStartViewportOffsetY = useSharedValue(0);
+  const panActive = useSharedValue(0);
 
   function handleTouchPrepare() {
     onTouchPrepare?.(item.id);
@@ -250,6 +262,9 @@ export function TransformableSnag({
     .onStart(() => {
       'worklet';
 
+      dragStartViewportOffsetX.value = activeViewportOffsetX.value;
+      dragStartViewportOffsetY.value = activeViewportOffsetY.value;
+      panActive.value = 1;
       moveActive.value = withTiming(1, {
         duration: 120,
         easing: ReanimatedEasing.out(ReanimatedEasing.cubic),
@@ -340,12 +355,28 @@ export function TransformableSnag({
     .onEnd((event) => {
       'worklet';
 
-      const nextTranslateX = translateX.value;
-      const nextTranslateY = translateY.value;
+      const viewportDeltaX = activeViewportOffsetX.value - dragStartViewportOffsetX.value;
+      const viewportDeltaY = activeViewportOffsetY.value - dragStartViewportOffsetY.value;
+      const nextTranslateX = translateX.value + viewportDeltaX;
+      const nextTranslateY = translateY.value + viewportDeltaY;
       const nextScale = scale.value;
       const nextRotation = rotation.value;
       const nextWidth = Math.max(44, baseWidth.value * nextScale);
       const nextHeight = baseHeight.value * (nextWidth / baseWidth.value);
+      const committedTranslateX = clampSnagTranslation({
+        basePosition: baseTranslateX.value,
+        baseSize: baseWidth.value,
+        containerSize: containerWidth,
+        scale: nextScale,
+        translation: nextTranslateX,
+      });
+      const committedTranslateY = clampSnagTranslation({
+        basePosition: baseTranslateY.value,
+        baseSize: baseHeight.value,
+        containerSize: containerHeight,
+        scale: nextScale,
+        translation: nextTranslateY,
+      });
       const fingerScreenPoint = {
         x: event.absoluteX,
         y: event.absoluteY,
@@ -359,6 +390,7 @@ export function TransformableSnag({
         : false;
 
       if (shouldDelete && trashDropZone) {
+        panActive.value = 0;
         if (onDragEnd) {
           runOnJS(reportDragEnd)({
             x: trashDropZone.hitCenterX,
@@ -411,9 +443,9 @@ export function TransformableSnag({
           easing: ReanimatedEasing.out(ReanimatedEasing.cubic),
         });
       }
-      runOnJS(commitTransform)(nextTranslateX, nextTranslateY, nextScale, nextRotation);
-      baseTranslateX.value = roundSnagValue(baseTranslateX.value + nextTranslateX - (nextWidth - baseWidth.value) / 2);
-      baseTranslateY.value = roundSnagValue(baseTranslateY.value + nextTranslateY - (nextHeight - baseHeight.value) / 2);
+      runOnJS(commitTransform)(committedTranslateX, committedTranslateY, nextScale, nextRotation);
+      baseTranslateX.value = roundSnagValue(baseTranslateX.value + committedTranslateX - (nextWidth - baseWidth.value) / 2);
+      baseTranslateY.value = roundSnagValue(baseTranslateY.value + committedTranslateY - (nextHeight - baseHeight.value) / 2);
       baseWidth.value = roundSnagValue(nextWidth);
       baseHeight.value = roundSnagValue(nextHeight);
       baseRotation.value = roundSnagValue(baseRotation.value + nextRotation);
@@ -425,6 +457,7 @@ export function TransformableSnag({
       savedScale.value = 1;
       rotation.value = 0;
       savedRotation.value = 0;
+      panActive.value = 0;
       moveActive.value = withTiming(0, {
         duration: 120,
         easing: ReanimatedEasing.out(ReanimatedEasing.cubic),
@@ -440,6 +473,7 @@ export function TransformableSnag({
         duration: 120,
         easing: ReanimatedEasing.out(ReanimatedEasing.cubic),
       });
+      panActive.value = 0;
     });
 
   const pinch = Gesture.Pinch()
@@ -554,19 +588,42 @@ export function TransformableSnag({
 
   const gesture = Gesture.Simultaneous(pan, pinch, rotate, longPress);
 
-  const animatedStyle = useAnimatedStyle(() => ({
-    height: baseHeight.value,
-    left: baseTranslateX.value - transformGestureFrame.left,
-    top: baseTranslateY.value - transformGestureFrame.top,
-    transform: [
-      { translateX: translateX.value },
-      { translateY: translateY.value },
-      { scale: scale.value },
-      { scale: trashScale.value },
-      { rotateZ: `${baseRotation.value + rotation.value}rad` },
-    ],
-    width: baseWidth.value,
-  }));
+  const animatedStyle = useAnimatedStyle(() => {
+    const viewportDeltaX = panActive.value === 1 && isTrashArmed.value === 0
+      ? activeViewportOffsetX.value - dragStartViewportOffsetX.value
+      : 0;
+    const viewportDeltaY = panActive.value === 1 && isTrashArmed.value === 0
+      ? activeViewportOffsetY.value - dragStartViewportOffsetY.value
+      : 0;
+    const compensatedTranslateX = clampSnagTranslation({
+      basePosition: baseTranslateX.value,
+      baseSize: baseWidth.value,
+      containerSize: containerWidth,
+      scale: scale.value,
+      translation: translateX.value + viewportDeltaX,
+    });
+    const compensatedTranslateY = clampSnagTranslation({
+      basePosition: baseTranslateY.value,
+      baseSize: baseHeight.value,
+      containerSize: containerHeight,
+      scale: scale.value,
+      translation: translateY.value + viewportDeltaY,
+    });
+
+    return {
+      height: baseHeight.value,
+      left: baseTranslateX.value - transformGestureFrame.left,
+      top: baseTranslateY.value - transformGestureFrame.top,
+      transform: [
+        { translateX: compensatedTranslateX },
+        { translateY: compensatedTranslateY },
+        { scale: scale.value },
+        { scale: trashScale.value },
+        { rotateZ: `${baseRotation.value + rotation.value}rad` },
+      ],
+      width: baseWidth.value,
+    };
+  });
 
   const moveReadyOutlineStyle = useAnimatedStyle(() => ({
     opacity: moveActive.value,

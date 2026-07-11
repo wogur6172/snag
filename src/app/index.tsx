@@ -3339,11 +3339,7 @@ export default function SnagApp() {
       });
     } catch (error) {
       console.warn('Could not create cloud board room', error);
-      nextRoom = await createSocialBoardRoomAsync({
-        client: null,
-        currentMemberId: LOCAL_BOARD_MEMBER_ID,
-        index: boardRoomCount,
-      });
+      return null;
     }
 
     setBoardRooms((currentRooms) => [...currentRooms, nextRoom]);
@@ -3381,7 +3377,7 @@ export default function SnagApp() {
       return false;
     }
 
-    const existingRoom = boardRooms.find((room) => room.id === nextRoom.id || room.code === nextRoom.code);
+    const existingRoom = boardRooms.find((room) => room.id === nextRoom.id);
 
     if (existingRoom) {
       openBoardRoomWithLoading(existingRoom.id);

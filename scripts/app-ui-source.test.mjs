@@ -375,6 +375,17 @@ describe('menu source layout', () => {
     assert.doesNotMatch(appSource.slice(joinHandlerStart, joinHandlerEnd), /client: null/);
   });
 
+  it('never replaces a failed cloud room creation with a same-code local room', () => {
+    const source = getFunctionSource('handleCreateBoardRoom', 'handleJoinBoardRoom');
+    const joinSource = getFunctionSource('handleJoinBoardRoom', 'handleSelectBoardRoom');
+
+    assert.doesNotMatch(source, /client: null/);
+    assert.match(source, /Could not create cloud board room/);
+    assert.match(source, /return null/);
+    assert.doesNotMatch(joinSource, /room\.code === nextRoom\.code/);
+    assert.match(joinSource, /room\.id === nextRoom\.id/);
+  });
+
   it('renders first-run starter guidance only on the first empty collection category', () => {
     const collectionSource = getFunctionSource('CollectionView', 'clampDrawingValue');
 

@@ -1,7 +1,5 @@
 import type { SnagDrawingStroke, SnagItem } from '../data/snags.ts';
 import {
-  createBoardRoom,
-  createBoardRoomFromInviteCode,
   type BoardRoom,
 } from '../utils/boards.ts';
 import { normalizeProfileDisplayName } from '../utils/snag-library.ts';
@@ -340,7 +338,11 @@ export async function loadOrCreateSocialProfileAsync({
     });
   } catch (error) {
     console.warn('Could not upsert social profile', error);
-    return localProfile;
+    return {
+      cloudEnabled: true,
+      displayName: normalizedDisplayName,
+      id: userId,
+    };
   }
 }
 
@@ -475,7 +477,7 @@ export async function createSocialBoardRoomAsync({
   index: number;
 }): Promise<BoardRoom> {
   if (!client) {
-    return createBoardRoom({ index });
+    throw new Error('Social boards are unavailable.');
   }
 
   const insert = createSocialBoardInsert({
@@ -526,10 +528,7 @@ export async function joinSocialBoardRoomAsync({
   }
 
   if (!client) {
-    return createBoardRoomFromInviteCode({
-      index,
-      inviteCode: code,
-    });
+    return null;
   }
 
   const roomResult = await client

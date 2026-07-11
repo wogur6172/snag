@@ -88,12 +88,15 @@ function isValidHttpUrl(value: string) {
   }
 }
 
-export function getSupabasePublicConfig(
-  env: SupabasePublicEnv = process.env as Record<string, string | undefined>,
-): SupabasePublicConfig {
+export function getSupabasePublicConfig(env?: SupabasePublicEnv): SupabasePublicConfig {
+  const resolvedEnv = env ?? {
+    EXPO_PUBLIC_SUPABASE_PUBLISHABLE_KEY: process.env.EXPO_PUBLIC_SUPABASE_PUBLISHABLE_KEY,
+    EXPO_PUBLIC_SUPABASE_URL: process.env.EXPO_PUBLIC_SUPABASE_URL,
+  };
+
   return {
-    publishableKey: normalizeEnvString(env.EXPO_PUBLIC_SUPABASE_PUBLISHABLE_KEY),
-    url: normalizeEnvString(env.EXPO_PUBLIC_SUPABASE_URL),
+    publishableKey: normalizeEnvString(resolvedEnv.EXPO_PUBLIC_SUPABASE_PUBLISHABLE_KEY),
+    url: normalizeEnvString(resolvedEnv.EXPO_PUBLIC_SUPABASE_URL),
   };
 }
 

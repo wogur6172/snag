@@ -1,4 +1,5 @@
 import assert from 'node:assert/strict';
+import { readFileSync } from 'node:fs';
 import { describe, it } from 'node:test';
 
 import {
@@ -18,6 +19,14 @@ import {
 } from '../src/utils/social-sync.ts';
 
 describe('social sync mapping', () => {
+  it('uses Expo statically inlinable environment variable references in production bundles', () => {
+    const source = readFileSync(new URL('../src/utils/social-sync.ts', import.meta.url), 'utf8');
+
+    assert.match(source, /process\.env\.EXPO_PUBLIC_SUPABASE_URL/);
+    assert.match(source, /process\.env\.EXPO_PUBLIC_SUPABASE_PUBLISHABLE_KEY/);
+    assert.doesNotMatch(source, /env: SupabasePublicEnv = process\.env/);
+  });
+
   it('detects whether Supabase public config is usable', () => {
     assert.equal(isSupabaseConfigured(getSupabasePublicConfig({})), false);
     assert.equal(

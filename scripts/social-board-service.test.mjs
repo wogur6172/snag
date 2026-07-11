@@ -67,6 +67,42 @@ describe('social board service fallback', () => {
     );
   });
 
+  it('keeps the authenticated cloud identity when profile name sync temporarily fails', async () => {
+    const client = {
+      auth: {
+        getSession: async () => ({
+          data: {
+            session: {
+              user: {
+                id: 'profile-jae',
+              },
+            },
+          },
+        }),
+        signInAnonymously: async () => ({ data: { user: null } }),
+      },
+      from: () => ({
+        upsert: () => ({
+          throwOnError: async () => {
+            throw new Error('temporary profile write failure');
+          },
+        }),
+      }),
+    };
+
+    assert.deepEqual(
+      await loadOrCreateSocialProfileAsync({
+        client,
+        displayName: '  Jae  ',
+      }),
+      {
+        cloudEnabled: true,
+        displayName: 'Jae',
+        id: 'profile-jae',
+      },
+    );
+  });
+
   it('updates an existing cloud profile name as soon as the user saves it', async () => {
     const calls = [];
     const client = {
@@ -185,29 +221,27 @@ describe('social board service fallback', () => {
     });
   });
 
-  it('falls back to local room creation when Supabase is not configured', async () => {
-    const room = await createSocialBoardRoomAsync({
-      client: null,
-      currentMemberId: LOCAL_BOARD_MEMBER_ID,
-      index: 0,
-    });
-
-    assert.equal(room.code, 'SN0001');
-    assert.equal(room.ownerId, LOCAL_BOARD_MEMBER_ID);
-    assert.deepEqual(room.memberIds, [LOCAL_BOARD_MEMBER_ID]);
+  it('does not create a fake local room when Supabase is unavailable', async () => {
+    await assert.rejects(
+      createSocialBoardRoomAsync({
+        client: null,
+        currentMemberId: LOCAL_BOARD_MEMBER_ID,
+        index: 0,
+      }),
+      /Social boards are unavailable/,
+    );
   });
 
-  it('falls back to a local joined-room shell when Supabase is not configured', async () => {
-    const room = await joinSocialBoardRoomAsync({
-      client: null,
-      currentMemberId: LOCAL_BOARD_MEMBER_ID,
-      index: 1,
-      inviteCode: ' sn 77 ',
-    });
-
-    assert.ok(room);
-    assert.equal(room.code, 'SN77');
-    assert.deepEqual(room.memberIds, ['remote-owner-sn77', LOCAL_BOARD_MEMBER_ID]);
+  it('treats invite codes as missing instead of creating a duplicate local room offline', async () => {
+    assert.equal(
+      await joinSocialBoardRoomAsync({
+        client: null,
+        currentMemberId: LOCAL_BOARD_MEMBER_ID,
+        index: 1,
+        inviteCode: ' sn 77 ',
+      }),
+      null,
+    );
   });
 
   it('transfers board ownership through the cloud service', async () => {

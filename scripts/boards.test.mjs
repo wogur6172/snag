@@ -51,6 +51,7 @@ import {
   SNAG_APP_DOWNLOAD_URL,
   transferBoardRoomOwnership,
   undoBoardDrawingStroke,
+  updateBoardMemberDisplayName,
   updateBoardRoomColor,
 } from '../src/utils/boards.ts';
 
@@ -246,6 +247,39 @@ describe('social board rooms', () => {
         role: 'Owner',
       },
     ]);
+  });
+
+  it('updates a renamed member in every joined room without mutating the old rooms', () => {
+    const joinedRooms = [
+      {
+        ...createBoardRoom({ createdAt: 1710000000000, index: 0 }),
+        memberIds: ['profile-jae', 'profile-friend'],
+        memberNames: {
+          'profile-friend': 'Mina',
+          'profile-jae': 'Old Name',
+        },
+        ownerId: 'profile-jae',
+      },
+      {
+        ...createBoardRoom({ createdAt: 1710000000500, index: 1 }),
+        memberIds: ['profile-friend', 'profile-jae'],
+        memberNames: {
+          'profile-jae': 'Old Name',
+        },
+        ownerId: 'profile-friend',
+      },
+    ];
+
+    const renamedRooms = updateBoardMemberDisplayName({
+      displayName: '  New   Name  ',
+      memberId: 'profile-jae',
+      rooms: joinedRooms,
+    });
+
+    assert.equal(renamedRooms[0].memberNames['profile-jae'], 'New Name');
+    assert.equal(renamedRooms[1].memberNames['profile-jae'], 'New Name');
+    assert.equal(renamedRooms[0].memberNames['profile-friend'], 'Mina');
+    assert.equal(joinedRooms[0].memberNames['profile-jae'], 'Old Name');
   });
 
   it('uses synced member names before role fallback labels', () => {

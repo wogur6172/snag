@@ -332,26 +332,50 @@ export async function loadOrCreateSocialProfileAsync({
     userId = signInResult.data.user.id;
   }
 
-  const now = getNowIso();
-
   try {
-    await client
-      .from('profiles')
-      .upsert({
-        display_name: normalizedDisplayName,
-        id: userId,
-        updated_at: now,
-      })
-      .throwOnError();
+    return await updateSocialProfileDisplayNameAsync({
+      client,
+      displayName: normalizedDisplayName,
+      profileId: userId,
+    });
   } catch (error) {
     console.warn('Could not upsert social profile', error);
     return localProfile;
   }
+}
+
+export async function updateSocialProfileDisplayNameAsync({
+  client = null,
+  displayName,
+  profileId,
+}: {
+  client?: SocialSupabaseClient;
+  displayName: string;
+  profileId: string;
+}): Promise<SocialProfile> {
+  const normalizedDisplayName = normalizeProfileDisplayName(displayName);
+
+  if (!client) {
+    return {
+      cloudEnabled: false,
+      displayName: normalizedDisplayName,
+      id: profileId,
+    };
+  }
+
+  await client
+    .from('profiles')
+    .upsert({
+      display_name: normalizedDisplayName,
+      id: profileId,
+      updated_at: getNowIso(),
+    }, { onConflict: 'id' })
+    .throwOnError();
 
   return {
     cloudEnabled: true,
     displayName: normalizedDisplayName,
-    id: userId,
+    id: profileId,
   };
 }
 

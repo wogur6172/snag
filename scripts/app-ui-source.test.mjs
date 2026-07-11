@@ -132,9 +132,22 @@ describe('menu source layout', () => {
     assert.match(source, /tintColor=\{profileNameDirty \? INK : 'rgba\(255, 255, 255, 0\.54\)'\}/);
   });
 
+  it('updates cached board member names and Supabase when a nickname is saved', () => {
+    const source = getFunctionSource('handleSubmitProfileName', 'isCategoryGridVisible');
+
+    assert.match(source, /updateBoardMemberDisplayName\(/);
+    assert.match(source, /cacheSocialBoardSnapshot\(/);
+    assert.match(source, /setSocialProfile\(/);
+    assert.match(source, /updateSocialProfileDisplayNameAsync\(/);
+    assert.match(source, /Could not update social profile name/);
+  });
+
   it('shows tappable email, Instagram, and TikTok destinations in settings', () => {
     const source = getFunctionSource('SettingsOverlay', 'CategoryBackgroundPicker');
     const iconSource = getFunctionSource('SettingsContactIcon', 'SettingsOverlay');
+    const panelIndex = source.indexOf('styles.settingsPanel');
+    const panelCloseIndex = source.indexOf('</Animated.View>', panelIndex);
+    const footerIndex = source.indexOf('styles.settingsContactFooter');
 
     assert.match(appSource, /import \* as Linking from 'expo-linking';/);
     assert.match(appSource, /SNAG_PUBLIC_LINKS/);
@@ -143,20 +156,27 @@ describe('menu source layout', () => {
     assert.match(source, /<SettingsContactIcon id=\{link\.id\} \/>/);
     assert.match(source, /openSnagPublicLinkAsync\(link\.url, Linking\.openURL\)/);
     assert.match(source, /accessibilityLabel=\{link\.accessibilityLabel\}/);
-    assert.match(source, /\{link\.label\}/);
     assert.match(source, /\{link\.value\}/);
-    assert.match(source, /arrow\.up\.right/);
     assert.match(source, /Could not open Snag public link/);
+    assert.ok(panelIndex < panelCloseIndex);
+    assert.ok(panelCloseIndex < footerIndex);
+    assert.doesNotMatch(source, /\{link\.label\}/);
+    assert.doesNotMatch(source, /arrow\.up\.right/);
     assert.match(iconSource, /case 'email'/);
     assert.match(iconSource, /case 'instagram'/);
     assert.match(iconSource, /case 'tiktok'/);
     assert.match(iconSource, /envelope\.fill/);
     assert.match(iconSource, /<Svg/);
-    assert.match(appSource, /settingsContactList: \{/);
-    assert.match(appSource, /settingsContactRow: \{/);
-    assert.match(appSource, /settingsContactBrandIcon: \{/);
-    assert.match(appSource, /settingsContactLabel: \{/);
+    assert.match(iconSource, /#EA4335/);
+    assert.match(iconSource, /SvgLinearGradient/);
+    assert.match(iconSource, /#25F4EE/);
+    assert.match(iconSource, /#FE2C55/);
+    assert.match(appSource, /settingsContactFooter: \{/);
+    assert.match(appSource, /settingsContactLink: \{/);
+    assert.match(appSource, /settingsContactIcon: \{/);
     assert.match(appSource, /settingsContactValue: \{/);
+    assert.doesNotMatch(appSource, /settingsContactRow: \{/);
+    assert.doesNotMatch(appSource, /settingsContactArrow: \{/);
   });
 
   it('moves social limit helper copy into settings instead of the board lobby', () => {

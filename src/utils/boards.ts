@@ -276,6 +276,41 @@ function getBoardRoomMemberIds(room: BoardRoom) {
   return memberIds.includes(ownerId) ? memberIds : [ownerId, ...memberIds];
 }
 
+export function updateBoardMemberDisplayName({
+  displayName,
+  memberId,
+  rooms,
+}: {
+  displayName: string;
+  memberId: string;
+  rooms: BoardRoom[];
+}) {
+  const normalizedDisplayName = displayName.trim().replace(/\s+/g, ' ');
+
+  if (!memberId || !normalizedDisplayName) {
+    return rooms;
+  }
+
+  let changed = false;
+  const nextRooms = rooms.map((room) => {
+    if (!getBoardRoomMemberIds(room).includes(memberId) || room.memberNames?.[memberId] === normalizedDisplayName) {
+      return room;
+    }
+
+    changed = true;
+
+    return {
+      ...room,
+      memberNames: {
+        ...room.memberNames,
+        [memberId]: normalizedDisplayName,
+      },
+    };
+  });
+
+  return changed ? nextRooms : rooms;
+}
+
 export function getBoardRoomMemberCount(room: BoardRoom) {
   return getBoardRoomMemberIds(room).length;
 }

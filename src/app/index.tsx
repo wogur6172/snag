@@ -31,7 +31,7 @@ import {
   type ViewStyle,
 } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
-import Svg, { Path } from 'react-native-svg';
+import Svg, { Defs, LinearGradient as SvgLinearGradient, Path, Stop } from 'react-native-svg';
 
 import { EditableCutout } from '@/components/editable-cutout';
 import { TransformableSnag, type SnagCopyRequestPoint } from '@/components/transformable-snag';
@@ -83,6 +83,7 @@ import {
   shouldStartBoardPanGesture,
   transferBoardRoomOwnership,
   undoBoardDrawingStroke,
+  updateBoardMemberDisplayName,
   updateBoardRoomColor,
   type BoardRoom,
 } from '@/utils/boards';
@@ -129,6 +130,7 @@ import {
   transferSocialBoardOwnerAsync,
   updateBoardSnagTransformAsync,
   updateSocialBoardColorAsync,
+  updateSocialProfileDisplayNameAsync,
   uploadAndSaveBoardSnagAsync,
   type SocialProfile,
   type SocialBoardSnapshot,
@@ -2715,6 +2717,11 @@ export default function SnagApp() {
 
   function handleSubmitProfileName() {
     const nextProfileName = normalizeProfileDisplayName(profileNameDraft);
+    const nextBoardRooms = updateBoardMemberDisplayName({
+      displayName: nextProfileName,
+      memberId: currentBoardMemberId,
+      rooms: boardRooms,
+    });
 
     Keyboard.dismiss();
     setProfileNameDraft(getSettingsProfileNameDraft(nextProfileName));
@@ -2722,6 +2729,38 @@ export default function SnagApp() {
       ...currentSettings,
       profileName: nextProfileName,
     }));
+    setSocialProfile((currentProfile) => (
+      currentProfile
+        ? { ...currentProfile, displayName: nextProfileName }
+        : currentProfile
+    ));
+
+    if (nextBoardRooms !== boardRooms) {
+      setBoardRooms(nextBoardRooms);
+      cacheSocialBoardSnapshot({
+        drawingsByRoomId: drawingsByBoardRoomId,
+        rooms: nextBoardRooms,
+        snagsByRoomId: boardSnagsByRoomIdRef.current,
+      });
+    }
+
+    if (socialClient && socialProfile?.cloudEnabled) {
+      void updateSocialProfileDisplayNameAsync({
+        client: socialClient,
+        displayName: nextProfileName,
+        profileId: socialProfile.id,
+      })
+        .then((updatedProfile) => {
+          setSocialProfile((currentProfile) => (
+            currentProfile?.id === updatedProfile.id
+              ? updatedProfile
+              : currentProfile
+          ));
+        })
+        .catch((error) => {
+          console.warn('Could not update social profile name', error);
+        });
+    }
   }
 
   function isCategoryGridVisible(categoryId: string) {
@@ -3961,36 +4000,42 @@ function SettingsContactIcon({
 }: {
   id: typeof SNAG_PUBLIC_LINKS[number]['id'];
 }) {
-  const color = 'rgba(255, 255, 255, 0.82)';
+  const tiktokPath = 'M13.5 2.5h3.15c.22 2.08 1.42 3.36 3.65 3.67v3.16a8.2 8.2 0 0 1-3.65-1.1v6.3a6.05 6.05 0 1 1-5.05-5.98v3.26a2.87 2.87 0 1 0 1.9 2.72V2.5Z';
 
   switch (id) {
     case 'email':
-      return <SymbolView name={symbolName('envelope.fill')} size={14} tintColor={color} weight="semibold" />;
+      return <SymbolView name={symbolName('envelope.fill')} size={19} tintColor="#EA4335" weight="semibold" />;
     case 'instagram':
       return (
-        <Svg height={17} viewBox="0 0 24 24" width={17}>
+        <Svg height={21} viewBox="0 0 24 24" width={21}>
+          <Defs>
+            <SvgLinearGradient id="instagramGradient" x1="2" x2="22" y1="22" y2="2">
+              <Stop offset="0" stopColor="#FFB147" />
+              <Stop offset="0.46" stopColor="#F43B69" />
+              <Stop offset="1" stopColor="#7B4DFF" />
+            </SvgLinearGradient>
+          </Defs>
           <Path
             d="M7 2h10a5 5 0 0 1 5 5v10a5 5 0 0 1-5 5H7a5 5 0 0 1-5-5V7a5 5 0 0 1 5-5Z"
             fill="none"
-            stroke={color}
-            strokeWidth={1.9}
+            stroke="url(#instagramGradient)"
+            strokeWidth={2.15}
           />
           <Path
             d="M16 11.37A4 4 0 1 1 12.63 8 4 4 0 0 1 16 11.37Z"
             fill="none"
-            stroke={color}
-            strokeWidth={1.9}
+            stroke="url(#instagramGradient)"
+            strokeWidth={2.15}
           />
-          <Path d="M17.5 6.5h.01" stroke={color} strokeLinecap="round" strokeWidth={2.4} />
+          <Path d="M17.5 6.5h.01" stroke="#7B4DFF" strokeLinecap="round" strokeWidth={2.6} />
         </Svg>
       );
     case 'tiktok':
       return (
-        <Svg height={17} viewBox="0 0 24 24" width={17}>
-          <Path
-            d="M13.5 2.5h3.15c.22 2.08 1.42 3.36 3.65 3.67v3.16a8.2 8.2 0 0 1-3.65-1.1v6.3a6.05 6.05 0 1 1-5.05-5.98v3.26a2.87 2.87 0 1 0 1.9 2.72V2.5Z"
-            fill={color}
-          />
+        <Svg height={21} viewBox="0 0 24 24" width={21}>
+          <Path d={tiktokPath} fill="#25F4EE" transform="translate(-1.2 0.85)" />
+          <Path d={tiktokPath} fill="#FE2C55" transform="translate(1.2 -0.7)" />
+          <Path d={tiktokPath} fill="#FFFFFF" />
         </Svg>
       );
   }
@@ -4095,40 +4140,29 @@ function SettingsOverlay({
           </View>
           <Text style={styles.settingsHint}>{profileName} appears in Social rooms.</Text>
         </View>
-        <View style={styles.settingsContactList}>
-          {SNAG_PUBLIC_LINKS.map((link) => (
-            <Pressable
-              accessibilityRole="link"
-              accessibilityLabel={link.accessibilityLabel}
-              key={link.id}
-              onPress={() => {
-                void handleOpenPublicLink(link);
-              }}
-              style={({ pressed }) => [styles.settingsContactRow, pressed && styles.settingsPressed]}>
-              <View style={styles.settingsContactBrandIcon}>
-                <SettingsContactIcon id={link.id} />
-              </View>
-              <View style={styles.settingsContactCopy}>
-                <Text style={styles.settingsContactLabel}>{link.label}</Text>
-                <Text ellipsizeMode="middle" numberOfLines={1} style={styles.settingsContactValue}>{link.value}</Text>
-              </View>
-              <View style={styles.settingsContactArrow}>
-                <SymbolView
-                  name={symbolName('arrow.up.right')}
-                  size={12}
-                  tintColor="rgba(255, 255, 255, 0.7)"
-                  weight="bold"
-                />
-              </View>
-            </Pressable>
-          ))}
-        </View>
         <View style={styles.settingsHelpSection}>
           <Text style={styles.settingsHelpTitle}>Social limits</Text>
           <Text style={styles.settingsHelpText}>
             {`Free accounts can create ${BOARD_SOCIAL_LIMITS.boardsCreatedPerMember} boards, join ${BOARD_SOCIAL_LIMITS.boardsJoinedPerMember} boards total, invite ${BOARD_SOCIAL_LIMITS.membersPerBoard} people per board, and keep ${BOARD_SOCIAL_LIMITS.snagsPerBoard} Snags on each board.`}
           </Text>
         </View>
+      </Animated.View>
+      <Animated.View style={[styles.settingsContactFooter, { opacity: panelOpacity, transform: [{ translateY }] }]}>
+        {SNAG_PUBLIC_LINKS.map((link) => (
+          <Pressable
+            accessibilityRole="link"
+            accessibilityLabel={link.accessibilityLabel}
+            key={link.id}
+            onPress={() => {
+              void handleOpenPublicLink(link);
+            }}
+            style={({ pressed }) => [styles.settingsContactLink, pressed && styles.settingsPressed]}>
+            <View style={styles.settingsContactIcon}>
+              <SettingsContactIcon id={link.id} />
+            </View>
+            <Text ellipsizeMode="middle" numberOfLines={1} style={styles.settingsContactValue}>{link.value}</Text>
+          </Pressable>
+        ))}
       </Animated.View>
     </Animated.View>
   );
@@ -9917,61 +9951,33 @@ const styles = StyleSheet.create({
     lineHeight: 15,
     fontWeight: '700',
   },
-  settingsContactList: {
-    gap: 7,
+  settingsContactFooter: {
+    position: 'absolute',
+    left: 30,
+    right: 30,
+    bottom: 28,
+    gap: 8,
   },
-  settingsContactRow: {
-    minHeight: 52,
-    borderRadius: 20,
+  settingsContactLink: {
+    minHeight: 42,
     flexDirection: 'row',
     alignItems: 'center',
-    gap: 8,
-    paddingLeft: 10,
-    paddingRight: 9,
-    backgroundColor: 'rgba(255, 255, 255, 0.1)',
-    borderWidth: StyleSheet.hairlineWidth,
-    borderColor: 'rgba(255, 255, 255, 0.16)',
+    gap: 13,
+    paddingHorizontal: 4,
   },
-  settingsContactBrandIcon: {
-    width: 30,
-    height: 30,
-    borderRadius: 15,
+  settingsContactIcon: {
+    width: 28,
+    height: 28,
     alignItems: 'center',
     justifyContent: 'center',
-    backgroundColor: 'rgba(255, 255, 255, 0.1)',
-    borderWidth: StyleSheet.hairlineWidth,
-    borderColor: 'rgba(255, 255, 255, 0.14)',
-  },
-  settingsContactCopy: {
-    flex: 1,
-    minWidth: 0,
-    justifyContent: 'center',
-    gap: 1,
-  },
-  settingsContactLabel: {
-    color: 'rgba(255, 255, 255, 0.5)',
-    fontFamily: Fonts.sans,
-    fontSize: 10,
-    lineHeight: 12,
-    fontWeight: '800',
   },
   settingsContactValue: {
     flex: 1,
-    color: 'rgba(255, 255, 255, 0.82)',
+    color: 'rgba(255, 255, 255, 0.64)',
     fontFamily: Fonts.sans,
-    fontSize: 12,
-    lineHeight: 15,
+    fontSize: 13,
+    lineHeight: 16,
     fontWeight: '700',
-  },
-  settingsContactArrow: {
-    width: 28,
-    height: 28,
-    borderRadius: 14,
-    alignItems: 'center',
-    justifyContent: 'center',
-    backgroundColor: 'rgba(255, 255, 255, 0.1)',
-    borderWidth: StyleSheet.hairlineWidth,
-    borderColor: 'rgba(255, 255, 255, 0.14)',
   },
   settingsHelpSection: {
     borderRadius: 24,

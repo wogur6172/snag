@@ -10,6 +10,7 @@ import {
   loadOrCreateSocialProfileAsync,
   reportSocialBoardMemberAsync,
   transferSocialBoardOwnerAsync,
+  updateSocialProfileDisplayNameAsync,
   deleteSocialBoardRoomAsync,
   deleteSocialBoardSnagAsync,
   uploadAndSaveBoardSnagAsync,
@@ -64,6 +65,44 @@ describe('social board service fallback', () => {
         id: 'profile-device-one',
       },
     );
+  });
+
+  it('updates an existing cloud profile name as soon as the user saves it', async () => {
+    const calls = [];
+    const client = {
+      from: (table) => ({
+        upsert: (payload, options) => {
+          calls.push({ options, payload, table });
+
+          return {
+            throwOnError: async () => ({ error: null }),
+          };
+        },
+      }),
+    };
+
+    assert.deepEqual(
+      await updateSocialProfileDisplayNameAsync({
+        client,
+        displayName: '  New   Name  ',
+        profileId: 'profile-jae',
+      }),
+      {
+        cloudEnabled: true,
+        displayName: 'New Name',
+        id: 'profile-jae',
+      },
+    );
+    assert.deepEqual(calls, [{
+      options: { onConflict: 'id' },
+      payload: {
+        display_name: 'New Name',
+        id: 'profile-jae',
+        updated_at: calls[0].payload.updated_at,
+      },
+      table: 'profiles',
+    }]);
+    assert.equal(Number.isNaN(Date.parse(calls[0].payload.updated_at)), false);
   });
 
   it('returns empty joined boards when offline and no local rooms are supplied', async () => {

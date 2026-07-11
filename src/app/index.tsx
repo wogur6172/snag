@@ -2166,22 +2166,6 @@ export default function SnagApp() {
           roomId,
           snag: storedBoardSnag,
         });
-
-        boardSnagsByRoomIdRef.current = {
-          ...boardSnagsByRoomIdRef.current,
-          [roomId]: (boardSnagsByRoomIdRef.current[roomId] ?? []).map((snag) => {
-            if (snag.id !== storedSnag.id) {
-              return snag;
-            }
-
-            const { pendingSync, ...syncedSnag } = snag;
-            return syncedSnag;
-          }),
-        };
-        setBoardSnagsByRoomId(boardSnagsByRoomIdRef.current);
-        cacheCurrentSocialBoardSnapshot({
-          snagsByRoomId: boardSnagsByRoomIdRef.current,
-        });
       }).catch((error) => {
         console.warn('Could not sync pasted board Snag', error);
       });

@@ -326,3 +326,19 @@ export function getStoredSnagImageName({
 
   return `${safeId}.${extension}`;
 }
+
+export function resolveStoredSnagImageUri({
+  imageUri,
+  storedImageExists,
+  storedImageUri,
+}: {
+  imageUri?: string;
+  storedImageExists: boolean;
+  storedImageUri: string;
+}) {
+  if (!imageUri?.startsWith('file://') || !storedImageExists) {
+    return imageUri;
+  }
+
+  return storedImageUri;
+}

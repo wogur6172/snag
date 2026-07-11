@@ -6,6 +6,7 @@ import {
   getDefaultSnagLibraryState,
   getStoredSnagImageName,
   parseSnagLibrarySnapshot,
+  resolveStoredSnagImageUri,
   type SnagLibraryState,
 } from '@/utils/snag-library';
 
@@ -40,7 +41,27 @@ export async function loadSnagLibraryAsync(): Promise<SnagLibraryState> {
   }
 
   const rawSnapshot = await libraryFile.text();
-  return parseSnagLibrarySnapshot(rawSnapshot);
+  const state = parseSnagLibrarySnapshot(rawSnapshot);
+
+  return {
+    ...state,
+    snags: state.snags.map((snag) => {
+      if (snag.kind === 'text' || !snag.imageUri) {
+        return snag;
+      }
+
+      const storedImage = new File(getImageDirectory(), getStoredSnagImageName(snag));
+      const imageUri = resolveStoredSnagImageUri({
+        imageUri: snag.imageUri,
+        storedImageExists: storedImage.exists,
+        storedImageUri: storedImage.uri,
+      });
+
+      return imageUri === snag.imageUri
+        ? snag
+        : { ...snag, imageUri };
+    }),
+  };
 }
 
 export async function saveSnagLibraryAsync(state: SnagLibraryState) {

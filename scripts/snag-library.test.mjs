@@ -9,8 +9,21 @@ import {
   normalizeProfileDisplayName,
   parseSnagLibrarySnapshot,
 } from '../src/utils/snag-library.ts';
+import * as snagLibrary from '../src/utils/snag-library.ts';
 
 describe('snag library persistence data', () => {
+  it('rebases stored image URIs after the iOS app container changes', () => {
+    assert.equal(typeof snagLibrary.resolveStoredSnagImageUri, 'function');
+    assert.equal(
+      snagLibrary.resolveStoredSnagImageUri({
+        imageUri: 'file:///var/mobile/Containers/Data/Application/OLD/Documents/snag-library/images/snag-1.png',
+        storedImageExists: true,
+        storedImageUri: 'file:///var/mobile/Containers/Data/Application/NEW/Documents/snag-library/images/snag-1.png',
+      }),
+      'file:///var/mobile/Containers/Data/Application/NEW/Documents/snag-library/images/snag-1.png',
+    );
+  });
+
   it('starts with an empty All library', () => {
     const state = getDefaultSnagLibraryState();
 

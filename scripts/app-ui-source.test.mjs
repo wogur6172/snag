@@ -270,6 +270,14 @@ describe('menu source layout', () => {
     assert.match(source, /cacheCurrentSocialBoardSnapshot\(\{\s*snagsByRoomId: boardSnagsByRoomIdRef\.current,\s*\}\)/);
   });
 
+  it('keeps pasted board snags pending until a cloud refresh confirms them', () => {
+    const source = getFunctionSource('handlePasteBoardSnag', 'handleOpenCategoryTextDialog');
+
+    assert.match(source, /pendingSync: true/);
+    assert.match(source, /await uploadAndSaveBoardSnagAsync/);
+    assert.doesNotMatch(source, /const \{ pendingSync, \.\.\.syncedSnag \} = snag/);
+  });
+
   it('moves the board canvas with an Animated value while throttling React scroll state commits', () => {
     const source = getFunctionSource('BoardView', 'BoardGrid');
 

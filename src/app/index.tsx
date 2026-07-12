@@ -4368,14 +4368,14 @@ function SettingsOverlay({
           </Pressable>
         ))}
       </Animated.View>
-      <AnimatedPressable
+      <Pressable
         accessibilityRole="button"
         accessibilityLabel="Delete my data"
         disabled={accountDeletionStatus !== 'idle'}
         onPress={onDeleteDataRequest}
         style={({ pressed }) => [styles.settingsDeleteDataButton, pressed && styles.settingsPressed]}>
         <Text style={styles.settingsDeleteDataText}>{ACCOUNT_DELETION_COPY.action}</Text>
-      </AnimatedPressable>
+      </Pressable>
       {accountDeletionStatus !== 'idle' && (
         <View style={styles.accountDeletionOverlay}>
           <Pressable

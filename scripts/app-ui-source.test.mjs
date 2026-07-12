@@ -380,7 +380,7 @@ describe('menu source layout', () => {
     assert.match(appSourceSlice, /reportSocialBoardSnagAsync/);
     assert.match(appSourceSlice, /BoardReportSnagDialog/);
     assert.match(boardSource, /accessibilityLabel="Report board snag"/);
-    assert.match(boardSource, /item\.ownerId !== currentMemberId/);
+    assert.match(boardSource, /anchoredSnag\.ownerId !== currentMemberId/);
   });
 
   it('passes Free social limit state into the board lobby and board actions', () => {

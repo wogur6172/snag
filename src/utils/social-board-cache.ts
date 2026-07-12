@@ -133,6 +133,7 @@ function normalizeSnags(value: unknown): SnagItem[] {
         ...(candidateKind === 'text' ? { kind: 'text' as const, text: candidateText } : {}),
         ...(isNumber(candidate.layerIndex) ? { layerIndex: candidate.layerIndex } : {}),
         ...(isString(candidate.originSnagId) ? { originSnagId: candidate.originSnagId } : {}),
+        ...(isString(candidate.ownerId) ? { ownerId: candidate.ownerId } : {}),
         ...(candidate.pendingSync === true ? { pendingSync: true } : {}),
         rotate: candidate.rotate,
         size: candidate.size,

@@ -43,6 +43,7 @@ describe('social board cache', () => {
           imageUri: 'https://example.com/snag.webp',
           imageWidth: 427,
           layerIndex: 2,
+          ownerId: 'profile-friend',
           rotate: '0deg',
           size: 180,
           title: 'Snag',
@@ -54,6 +55,7 @@ describe('social board cache', () => {
     assert.deepEqual(snapshot.rooms[0].memberNames, {
       'profile-jae': 'Jae',
     });
+    assert.equal(snapshot.snagsByRoomId['board-1'][0].ownerId, 'profile-friend');
     assert.deepEqual(parseSocialBoardCacheSnapshot(JSON.stringify(snapshot)), {
       drawingsByRoomId: snapshot.drawingsByRoomId,
       rooms: snapshot.rooms,

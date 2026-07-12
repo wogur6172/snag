@@ -64,6 +64,7 @@ import {
   getBoardLimitState,
   getBoardMemberActionCopy,
   getBoardMemberReportCopy,
+  getBoardSnagReportCopy,
   getBoardMemberList,
   getBoardMiniMapVisibilityConfig,
   getBoardPanStateCommitConfig,
@@ -141,6 +142,7 @@ import {
   loadOrCreateSocialProfileAsync,
   renameSocialBoardRoomAsync,
   reportSocialBoardMemberAsync,
+  reportSocialBoardSnagAsync,
   transferSocialBoardOwnerAsync,
   updateBoardSnagTransformAsync,
   updateSocialBoardColorAsync,
@@ -1484,6 +1486,8 @@ export default function SnagApp() {
   const [boardLeaveDialogOpen, setBoardLeaveDialogOpen] = useState(false);
   const [boardKickTarget, setBoardKickTarget] = useState<{ id: string; label: string } | null>(null);
   const [boardReportTarget, setBoardReportTarget] = useState<{ id: string; label: string } | null>(null);
+  const [boardSnagReportTarget, setBoardSnagReportTarget] = useState<{ roomId: string; snag: SnagItem } | null>(null);
+  const [boardSafetyNotice, setBoardSafetyNotice] = useState<string | null>(null);
   const [boardRenameValue, setBoardRenameValue] = useState('');
   const [textSnagDialog, setTextSnagDialog] = useState<TextSnagDialogState | null>(null);
   const [textSnagDraft, setTextSnagDraft] = useState('');
@@ -2229,6 +2233,7 @@ export default function SnagApp() {
       const pendingBoardSnag = {
         ...nextSnag,
         layerIndex: getNextSnagLayerIndex(currentRoomSnags),
+        ownerId: currentBoardMemberId,
         pendingSync: true,
         updatedAt: pastedAt,
       };
@@ -2445,6 +2450,7 @@ export default function SnagApp() {
       const nextRoomSnags = appendPendingSnag(currentRoomSnags, {
         ...nextSnag,
         layerIndex: getNextSnagLayerIndex(currentRoomSnags),
+        ownerId: currentBoardMemberId,
       });
 
       boardSnagsByRoomIdRef.current = {
@@ -2459,7 +2465,7 @@ export default function SnagApp() {
         client: activeSocialClient,
         currentMemberId: currentBoardMemberId,
         roomId,
-        snag: nextSnag,
+        snag: { ...nextSnag, ownerId: currentBoardMemberId },
       }).catch((error) => {
         console.warn('Could not sync board text Snag', error);
       });
@@ -3499,6 +3505,77 @@ export default function SnagApp() {
     });
   }
 
+  function handleOpenBoardSnagReport(roomId: string, snagId: string) {
+    const snag = (boardSnagsByRoomIdRef.current[roomId] ?? []).find((item) => item.id === snagId);
+
+    if (!snag?.ownerId || snag.ownerId === currentBoardMemberId) {
+      return;
+    }
+
+    closeBoardActions();
+    setBoardMembersOpen(false);
+    setBoardSnagReportTarget({ roomId, snag });
+  }
+
+  async function handleReportBoardSnag() {
+    const target = boardSnagReportTarget;
+
+    if (!target?.snag.ownerId || !activeSocialClient) {
+      setBoardSnagReportTarget(null);
+      setBoardSafetyNotice("Couldn't send report. Try again.");
+      return;
+    }
+
+    setBoardSnagReportTarget(null);
+    boardSnagsByRoomIdRef.current = deleteBoardSnagFromRoom({
+      boardsByRoomId: boardSnagsByRoomIdRef.current,
+      roomId: target.roomId,
+      snagId: target.snag.id,
+    });
+    setBoardSnagsByRoomId(boardSnagsByRoomIdRef.current);
+    cacheCurrentSocialBoardSnapshot({
+      snagsByRoomId: boardSnagsByRoomIdRef.current,
+    });
+
+    try {
+      await reportSocialBoardSnagAsync({
+        client: activeSocialClient,
+        currentMemberId: currentBoardMemberId,
+        roomId: target.roomId,
+        snagId: target.snag.id,
+        targetMemberId: target.snag.ownerId,
+      });
+      setBoardSafetyNotice('Reported and hidden.');
+      void Haptics.notificationAsync(Haptics.NotificationFeedbackType.Success).catch(() => undefined);
+    } catch (error) {
+      console.warn('Could not sync board Snag report', error);
+      const currentRoomSnags = boardSnagsByRoomIdRef.current[target.roomId] ?? [];
+
+      if (!currentRoomSnags.some((snag) => snag.id === target.snag.id)) {
+        boardSnagsByRoomIdRef.current = {
+          ...boardSnagsByRoomIdRef.current,
+          [target.roomId]: getLayeredSnags([...currentRoomSnags, target.snag]),
+        };
+        setBoardSnagsByRoomId(boardSnagsByRoomIdRef.current);
+        cacheCurrentSocialBoardSnapshot({
+          snagsByRoomId: boardSnagsByRoomIdRef.current,
+        });
+      }
+
+      setBoardSafetyNotice("Couldn't send report. Try again.");
+    }
+  }
+
+  useEffect(() => {
+    if (!boardSafetyNotice) {
+      return;
+    }
+
+    const timeout = setTimeout(() => setBoardSafetyNotice(null), 1800);
+
+    return () => clearTimeout(timeout);
+  }, [boardSafetyNotice]);
+
   function handleBackToBoardLobby() {
     closeDrawingMode();
     setBoardMembersOpen(false);
@@ -3763,6 +3840,7 @@ export default function SnagApp() {
               key={selectedBoardRoom?.id ?? 'board-lobby'}
               brandFont={brandFont}
               boardLimitState={boardLimitState}
+              currentMemberId={currentBoardMemberId}
               drawingRoomId={drawingBoardRoomId}
               drawingStrokeColor={drawingStrokeColor}
               drawingsByRoomId={drawingsByBoardRoomId}
@@ -3770,6 +3848,7 @@ export default function SnagApp() {
               onDeleteSnag={handleDeleteBoardSnag}
               onDrawingStrokeComplete={handleBoardDrawingStrokeComplete}
               onPasteSnag={handlePasteBoardSnag}
+              onReportSnagRequest={handleOpenBoardSnagReport}
               onSelectRoom={handleSelectBoardRoom}
               onSnagTransformEnd={handleBoardSnagTransformEnd}
               onTextSnagEditRequest={handleOpenBoardTextEdit}
@@ -3894,6 +3973,19 @@ export default function SnagApp() {
             onCancel={() => setBoardReportTarget(null)}
             onConfirm={handleReportBoardMember}
           />
+        )}
+        {boardSnagReportTarget && (
+          <BoardReportSnagDialog
+            onCancel={() => setBoardSnagReportTarget(null)}
+            onConfirm={() => {
+              void handleReportBoardSnag();
+            }}
+          />
+        )}
+        {boardSafetyNotice && (
+          <GlassSurface style={styles.boardSafetyNotice}>
+            <Text style={styles.boardSafetyNoticeText}>{boardSafetyNotice}</Text>
+          </GlassSurface>
         )}
         {mode === 'board' && selectedBoardRoom && boardMembersOpen && (
           <BoardMembersTray
@@ -4160,13 +4252,13 @@ function BoardMembersTray({
                       </Pressable>
                       <Pressable
                         accessibilityRole="button"
-                        accessibilityLabel="Kick"
+                        accessibilityLabel="Block from board"
                         onPress={() => {
                           setActiveMemberId(null);
                           onKickMember(member.id, member.label);
                         }}
                         style={({ pressed }) => [styles.boardMemberActionButton, styles.boardMemberActionButtonDanger, pressed && styles.pressed]}>
-                        <Text style={[styles.boardMemberActionText, styles.boardMemberActionTextDanger]}>Kick</Text>
+                        <Text style={[styles.boardMemberActionText, styles.boardMemberActionTextDanger]}>Block from board</Text>
                       </Pressable>
                     </>
                   )}
@@ -5293,7 +5385,7 @@ function BoardKickMemberDialog({
 
   return (
     <View style={styles.categoryDialogOverlay}>
-      <Pressable accessibilityRole="button" accessibilityLabel="Close board member removal dialog" onPress={onCancel} style={StyleSheet.absoluteFill} />
+      <Pressable accessibilityRole="button" accessibilityLabel="Close board member block dialog" onPress={onCancel} style={StyleSheet.absoluteFill} />
       <GlassSurface interactive style={[styles.categoryDialog, styles.categoryDeleteDialog]}>
         <Text style={[styles.categoryDialogTitle, styles.categoryDeleteTitle]}>{copy.title}</Text>
         <Text style={styles.categoryDeleteCopy}>{copy.message}</Text>
@@ -5301,7 +5393,7 @@ function BoardKickMemberDialog({
           <Pressable accessibilityRole="button" accessibilityLabel="Keep board member" onPress={onCancel} style={({ pressed }) => [styles.categoryDialogButton, pressed && styles.pressed]}>
             <Text style={styles.categoryDialogButtonText}>{copy.cancelLabel}</Text>
           </Pressable>
-          <Pressable accessibilityRole="button" accessibilityLabel="Remove board member" onPress={onConfirm} style={({ pressed }) => [styles.categoryDialogButton, styles.categoryDeleteButton, pressed && styles.pressed]}>
+          <Pressable accessibilityRole="button" accessibilityLabel="Block board member" onPress={onConfirm} style={({ pressed }) => [styles.categoryDialogButton, styles.categoryDeleteButton, pressed && styles.pressed]}>
             <Text style={styles.categoryDeleteButtonText}>{copy.confirmLabel}</Text>
           </Pressable>
         </View>
@@ -5332,6 +5424,34 @@ function BoardReportMemberDialog({
             <Text style={styles.categoryDialogButtonText}>{copy.cancelLabel}</Text>
           </Pressable>
           <Pressable accessibilityRole="button" accessibilityLabel="Report board member" onPress={onConfirm} style={({ pressed }) => [styles.categoryDialogButton, styles.categoryDialogButtonPrimary, pressed && styles.pressed]}>
+            <Text style={[styles.categoryDialogButtonText, styles.categoryDialogButtonPrimaryText]}>{copy.confirmLabel}</Text>
+          </Pressable>
+        </View>
+      </GlassSurface>
+    </View>
+  );
+}
+
+function BoardReportSnagDialog({
+  onCancel,
+  onConfirm,
+}: {
+  onCancel: () => void;
+  onConfirm: () => void;
+}) {
+  const copy = getBoardSnagReportCopy();
+
+  return (
+    <View style={styles.categoryDialogOverlay}>
+      <Pressable accessibilityRole="button" accessibilityLabel="Close board Snag report dialog" onPress={onCancel} style={StyleSheet.absoluteFill} />
+      <GlassSurface interactive style={[styles.categoryDialog, styles.categoryDeleteDialog]}>
+        <Text style={[styles.categoryDialogTitle, styles.categoryDeleteTitle]}>{copy.title}</Text>
+        <Text style={styles.categoryDeleteCopy}>{copy.message}</Text>
+        <View style={styles.categoryDialogActions}>
+          <Pressable accessibilityRole="button" accessibilityLabel="Cancel board Snag report" onPress={onCancel} style={({ pressed }) => [styles.categoryDialogButton, pressed && styles.pressed]}>
+            <Text style={styles.categoryDialogButtonText}>{copy.cancelLabel}</Text>
+          </Pressable>
+          <Pressable accessibilityRole="button" accessibilityLabel="Report board Snag" onPress={onConfirm} style={({ pressed }) => [styles.categoryDialogButton, styles.categoryDialogButtonPrimary, pressed && styles.pressed]}>
             <Text style={[styles.categoryDialogButtonText, styles.categoryDialogButtonPrimaryText]}>{copy.confirmLabel}</Text>
           </Pressable>
         </View>
@@ -7484,6 +7604,7 @@ function DrawingInputLayer({
 function BoardView({
   brandFont,
   boardLimitState,
+  currentMemberId,
   drawingRoomId,
   drawingStrokeColor,
   drawingsByRoomId,
@@ -7493,6 +7614,7 @@ function BoardView({
   onDrawingStrokeComplete,
   onJoinRoom,
   onPasteSnag,
+  onReportSnagRequest,
   onSelectRoom,
   onSnagTransformEnd,
   onTextSnagEditRequest,
@@ -7509,6 +7631,7 @@ function BoardView({
 }: {
   brandFont: string;
   boardLimitState: ReturnType<typeof getBoardLimitState>;
+  currentMemberId: string;
   drawingRoomId: string | null;
   drawingStrokeColor: string;
   drawingsByRoomId: Record<string, SnagDrawingStroke[]>;
@@ -7518,6 +7641,7 @@ function BoardView({
   onDrawingStrokeComplete: (roomId: string, stroke: SnagDrawingStroke) => void;
   onJoinRoom: (inviteCode: string) => Promise<boolean>;
   onPasteSnag: (request: BoardPasteSnagRequest) => void;
+  onReportSnagRequest: (roomId: string, snagId: string) => void;
   onSelectRoom: (roomId: string) => void;
   onSnagTransformEnd: (roomId: string, snagId: string, transform: SnagTransformPatch) => void;
   onTextSnagEditRequest: (roomId: string, snagId: string) => void;
@@ -8222,6 +8346,24 @@ function BoardView({
     onTextSnagEditRequest(roomId, snagId);
   }
 
+  function handleReportPress() {
+    const anchor = copyAnchor ?? textEditAnchor;
+
+    if (!anchor?.roomId) {
+      return;
+    }
+
+    const snag = snags.find((item) => item.id === anchor.snagId);
+
+    if (!snag?.ownerId || snag.ownerId === currentMemberId) {
+      clearActionAnchors();
+      return;
+    }
+
+    clearActionAnchors();
+    onReportSnagRequest(anchor.roomId, anchor.snagId);
+  }
+
   const visibleBoardSnags = useMemo(() => {
     const layeredSnags = getLayeredSnags(snags);
     const visibleSnags = getVisibleBoardSnags({
@@ -8381,6 +8523,12 @@ function BoardView({
   const boardActionPresentation = getCopyActionPresentation({
     viewportWidth: viewportWidth || Math.max(1, width - 32),
   });
+  const boardSecondaryActionPresentation = {
+    ...boardActionPresentation,
+    top: boardActionPresentation.top + 52,
+  };
+  const anchoredSnag = snags.find((item) => item.id === (copyAnchor ?? textEditAnchor)?.snagId);
+  const canReportAnchoredSnag = Boolean(anchoredSnag?.ownerId && anchoredSnag.ownerId !== currentMemberId);
 
   return (
     <View
@@ -8471,20 +8619,40 @@ function BoardView({
         />
       )}
       {!isDrawingBoard && copyAnchor?.roomId === room.id && (
-        <FloatingActionButton
-          accessibilityLabel="Copy board snag"
-          label={getCopyActionLabel({ copied: copyAnchor.copied === true })}
-          onPress={handleCopyPress}
-          style={boardActionPresentation}
-        />
+        <>
+          <FloatingActionButton
+            accessibilityLabel="Copy board snag"
+            label={getCopyActionLabel({ copied: copyAnchor.copied === true })}
+            onPress={handleCopyPress}
+            style={boardActionPresentation}
+          />
+          {canReportAnchoredSnag && (
+            <FloatingActionButton
+              accessibilityLabel="Report board snag"
+              label="Report"
+              onPress={handleReportPress}
+              style={boardSecondaryActionPresentation}
+            />
+          )}
+        </>
       )}
       {!isDrawingBoard && textEditAnchor?.roomId === room.id && (
-        <FloatingActionButton
-          accessibilityLabel="Edit board text snag"
-          label="Edit"
-          onPress={handleTextEditPress}
-          style={boardActionPresentation}
-        />
+        <>
+          <FloatingActionButton
+            accessibilityLabel="Edit board text snag"
+            label="Edit"
+            onPress={handleTextEditPress}
+            style={boardActionPresentation}
+          />
+          {canReportAnchoredSnag && (
+            <FloatingActionButton
+              accessibilityLabel="Report board snag"
+              label="Report"
+              onPress={handleReportPress}
+              style={boardSecondaryActionPresentation}
+            />
+          )}
+        </>
       )}
       {snagLimitCopy && (
         <GlassSurface style={styles.boardLimitPill}>
@@ -10134,6 +10302,28 @@ const styles = StyleSheet.create({
     fontSize: 12,
     lineHeight: 15,
     fontWeight: '800',
+    textAlign: 'center',
+  },
+  boardSafetyNotice: {
+    position: 'absolute',
+    right: 18,
+    top: 132,
+    zIndex: 140,
+    minHeight: 38,
+    maxWidth: 220,
+    borderRadius: 19,
+    justifyContent: 'center',
+    paddingHorizontal: 14,
+    backgroundColor: 'rgba(255, 255, 255, 0.72)',
+    borderWidth: StyleSheet.hairlineWidth,
+    borderColor: 'rgba(23, 23, 23, 0.08)',
+  },
+  boardSafetyNoticeText: {
+    color: INK,
+    fontFamily: Fonts.sans,
+    fontSize: 13,
+    lineHeight: 16,
+    fontWeight: '700',
     textAlign: 'center',
   },
   boardRoomList: {

@@ -90,15 +90,33 @@ create table if not exists public.board_drawings (
   primary key (board_id, id)
 );
 
-alter table public.board_reports
-  add constraint board_reports_snag_fk
-  foreign key (board_id, snag_id) references public.board_snags(board_id, id) on delete cascade;
+do $$
+begin
+  if not exists (
+    select 1
+    from pg_constraint
+    where conname = 'board_reports_snag_fk'
+      and conrelid = 'public.board_reports'::regclass
+  ) then
+    alter table public.board_reports
+      add constraint board_reports_snag_fk
+      foreign key (board_id, snag_id) references public.board_snags(board_id, id) on delete cascade;
+  end if;
 
-alter table public.board_reports
-  add constraint board_reports_snag_type_check check (
-    (type = 'snag' and snag_id is not null)
-    or (type <> 'snag' and snag_id is null)
-  );
+  if not exists (
+    select 1
+    from pg_constraint
+    where conname = 'board_reports_snag_type_check'
+      and conrelid = 'public.board_reports'::regclass
+  ) then
+    alter table public.board_reports
+      add constraint board_reports_snag_type_check check (
+        (type = 'snag' and snag_id is not null)
+        or (type <> 'snag' and snag_id is null)
+      );
+  end if;
+end
+$$;
 
 create index if not exists board_members_user_id_idx on public.board_members(user_id);
 create index if not exists board_members_board_id_idx on public.board_members(board_id);

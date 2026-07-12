@@ -105,6 +105,9 @@ import {
 } from '@/native/snag-cutout';
 import { copySnagImageAsync, getClipboardSnagImageAsync } from '@/native/snag-clipboard';
 import {
+  clearAllSnagLocalDataAsync,
+} from '@/native/snag-local-data';
+import {
   loadSnagLibraryAsync,
   persistSnagImageAsync,
   persistSnagPreviewAsync,
@@ -123,6 +126,7 @@ import {
   saveSocialBoardCacheAsync,
 } from '@/native/social-board-cache-storage';
 import { getSnagSupabaseClient } from '@/services/supabase-client';
+import { deleteMySnagDataAsync } from '@/services/account-deletion-service';
 import {
   addSocialBoardDrawingStrokeAsync,
   clearSocialBoardDrawingStrokesAsync,
@@ -150,6 +154,13 @@ import {
   normalizeProfileDisplayName,
   type SnagUserSettings,
 } from '@/utils/snag-library';
+import {
+  ACCOUNT_DELETION_COPY,
+  getAccountDeletionPresentation,
+  getPostDeletionLibraryState,
+  shouldClearLocalData,
+  type AccountDeletionStatus,
+} from '@/utils/account-deletion';
 import {
   getCaptureActivityDelayMs,
   getCaptureActivityPresentation,
@@ -1478,6 +1489,8 @@ export default function SnagApp() {
   const [textSnagDraft, setTextSnagDraft] = useState('');
   const [boardMembersOpen, setBoardMembersOpen] = useState(false);
   const [settingsOpen, setSettingsOpen] = useState(false);
+  const [accountDeletionStatus, setAccountDeletionStatus] = useState<AccountDeletionStatus>('idle');
+  const [socialBootstrapEnabled, setSocialBootstrapEnabled] = useState(true);
   const [settings, setSettings] = useState<SnagUserSettings>(DEFAULT_USER_SETTINGS);
   const [profileNameDraft, setProfileNameDraft] = useState(getSettingsProfileNameDraft(DEFAULT_USER_SETTINGS.profileName));
   const [socialProfile, setSocialProfile] = useState<SocialProfile | null>(null);
@@ -1802,7 +1815,7 @@ export default function SnagApp() {
   }, [categories, categoryGridPreferences, drawingsByCategoryId, libraryReady, selectedCategoryId, settings, snagCount, snags]);
 
   useEffect(() => {
-    if (!libraryReady) {
+    if (!libraryReady || !socialBootstrapEnabled) {
       return;
     }
 
@@ -1861,7 +1874,7 @@ export default function SnagApp() {
     return () => {
       isMounted = false;
     };
-  }, [applySocialBoardSnapshot, cacheSocialBoardSnapshot, libraryReady, settings, socialClient]);
+  }, [applySocialBoardSnapshot, cacheSocialBoardSnapshot, libraryReady, settings, socialBootstrapEnabled, socialClient]);
 
   useEffect(() => {
     if (!libraryReady || !socialProfile?.cloudEnabled || !socialClient) {
@@ -2803,7 +2816,95 @@ export default function SnagApp() {
   }
 
   function handleCloseSettings() {
+    if (accountDeletionStatus === 'deleting') {
+      return;
+    }
+
+    setAccountDeletionStatus('idle');
     setSettingsOpen(false);
+  }
+
+  function handleOpenAccountDeletion() {
+    setAccountDeletionStatus('confirming');
+  }
+
+  function handleCancelAccountDeletion() {
+    if (accountDeletionStatus !== 'deleting') {
+      setAccountDeletionStatus('idle');
+    }
+  }
+
+  function resetAppAfterAccountDeletion() {
+    const nextLibrary = getPostDeletionLibraryState();
+
+    setSocialBootstrapEnabled(false);
+    setSocialProfile(null);
+    setCategories(nextLibrary.categories);
+    setCategoryGridPreferences(nextLibrary.categoryGridPreferences);
+    setDrawingsByCategoryId(nextLibrary.drawingsByCategoryId);
+    setSettings(nextLibrary.settings);
+    setProfileNameDraft(getSettingsProfileNameDraft(nextLibrary.settings.profileName));
+    setSelectedCategoryId(nextLibrary.selectedCategoryId);
+    setSnagCount(nextLibrary.snagCount);
+    setSnags(nextLibrary.snags);
+    setBoardRooms([]);
+    setSelectedBoardRoomId(null);
+    setEnteringBoardRoomId(null);
+    setBoardRoomCount(0);
+    setBoardSnagsByRoomId({});
+    boardSnagsByRoomIdRef.current = {};
+    setBoardSnagCount(0);
+    setDrawingsByBoardRoomId({});
+    setDrawingBoardRoomId(null);
+    cachedSocialBoardSnapshotRef.current = null;
+    pendingBoardSnagUploadKeysRef.current.clear();
+    boardWarmupKeysRef.current.clear();
+    closeAllSelectionMode();
+    closeDrawingMode();
+    closeCategoryActions();
+    closeBoardActions();
+    setShowCategoryTray(false);
+    setBoardMembersOpen(false);
+    setStagedSnagId(null);
+    stagedSnagIdRef.current = null;
+    captureCategoryIdRef.current = nextLibrary.selectedCategoryId;
+    setMode('collection');
+    surfaceProgress.stopAnimation();
+    surfaceProgress.setValue(0);
+    requestCategorySnap('instant');
+  }
+
+  async function handleConfirmAccountDeletion() {
+    if (accountDeletionStatus === 'deleting') {
+      return;
+    }
+
+    setAccountDeletionStatus('deleting');
+
+    try {
+      const result = await deleteMySnagDataAsync({ client: socialClient });
+
+      if (!shouldClearLocalData(result)) {
+        throw new Error('Cloud account deletion was not confirmed.');
+      }
+
+      await socialClient?.auth.signOut({ scope: 'local' }).catch(() => undefined);
+
+      try {
+        await clearAllSnagLocalDataAsync();
+      } catch {
+        await clearAllSnagLocalDataAsync();
+      }
+
+      resetAppAfterAccountDeletion();
+      setAccountDeletionStatus('deleted');
+      await waitForDuration(900);
+      setSettingsOpen(false);
+      setAccountDeletionStatus('idle');
+    } catch (error) {
+      console.warn('Could not delete Snag account data', error);
+      setAccountDeletionStatus('failed');
+    }
   }
 
   function handleSubmitProfileName() {
@@ -2969,6 +3070,8 @@ export default function SnagApp() {
   }
 
   function handleOpenBoard() {
+    setSocialBootstrapEnabled(true);
+
     if (mode === 'board' && selectedBoardRoom) {
       closeDrawingMode();
       closeAllSelectionMode();
@@ -2987,6 +3090,7 @@ export default function SnagApp() {
   }
 
   function handleSwipeAllToBoard() {
+    setSocialBootstrapEnabled(true);
     closeDrawingMode();
     closeAllSelectionMode();
     dismissCollectionActions();
@@ -3699,8 +3803,12 @@ export default function SnagApp() {
 
         {settingsOpen && (
           <SettingsOverlay
+            accountDeletionStatus={accountDeletionStatus}
             onChangeProfileName={(name) => setProfileNameDraft(name.slice(0, 16))}
             onClose={handleCloseSettings}
+            onDeleteDataCancel={handleCancelAccountDeletion}
+            onDeleteDataConfirm={handleConfirmAccountDeletion}
+            onDeleteDataRequest={handleOpenAccountDeletion}
             onSubmitProfileName={handleSubmitProfileName}
             profileName={getProfileDisplayName(settings)}
             profileNameDraft={profileNameDraft}
@@ -4129,20 +4237,29 @@ function SettingsContactIcon({
 }
 
 function SettingsOverlay({
+  accountDeletionStatus,
   onChangeProfileName,
   onClose,
+  onDeleteDataCancel,
+  onDeleteDataConfirm,
+  onDeleteDataRequest,
   onSubmitProfileName,
   profileName,
   profileNameDraft,
 }: {
+  accountDeletionStatus: AccountDeletionStatus;
   onChangeProfileName: (name: string) => void;
   onClose: () => void;
+  onDeleteDataCancel: () => void;
+  onDeleteDataConfirm: () => void;
+  onDeleteDataRequest: () => void;
   onSubmitProfileName: () => void;
   profileName: string;
   profileNameDraft: string;
 }) {
   const [entrance] = useState(() => new Animated.Value(0));
   const profileNameDirty = normalizeProfileDisplayName(profileNameDraft) !== profileName;
+  const deletionPresentation = getAccountDeletionPresentation(accountDeletionStatus);
   const opacity = entrance.interpolate({
     inputRange: [0, 1],
     outputRange: [0, 1],
@@ -4251,6 +4368,64 @@ function SettingsOverlay({
           </Pressable>
         ))}
       </Animated.View>
+      <AnimatedPressable
+        accessibilityRole="button"
+        accessibilityLabel="Delete my data"
+        disabled={accountDeletionStatus !== 'idle'}
+        onPress={onDeleteDataRequest}
+        style={({ pressed }) => [styles.settingsDeleteDataButton, pressed && styles.settingsPressed]}>
+        <Text style={styles.settingsDeleteDataText}>{ACCOUNT_DELETION_COPY.action}</Text>
+      </AnimatedPressable>
+      {accountDeletionStatus !== 'idle' && (
+        <View style={styles.accountDeletionOverlay}>
+          <Pressable
+            accessibilityRole="button"
+            accessibilityLabel="Cancel data deletion"
+            disabled={deletionPresentation.blocksInteraction}
+            onPress={onDeleteDataCancel}
+            style={StyleSheet.absoluteFill}
+          />
+          <View style={styles.accountDeletionDialog}>
+            {accountDeletionStatus === 'deleted' ? (
+              <Text style={styles.accountDeletionSuccessText}>{deletionPresentation.message}</Text>
+            ) : (
+              <>
+                <Text style={styles.accountDeletionTitle}>
+                  {accountDeletionStatus === 'failed' ? "Couldn't delete your data" : ACCOUNT_DELETION_COPY.title}
+                </Text>
+                <Text style={styles.accountDeletionBody}>
+                  {accountDeletionStatus === 'failed' ? deletionPresentation.message : ACCOUNT_DELETION_COPY.body}
+                </Text>
+                {accountDeletionStatus === 'deleting' ? (
+                  <View style={styles.accountDeletionProgressRow}>
+                    <ActivityIndicator color={PAPER} size="small" />
+                    <Text style={styles.accountDeletionProgressText}>{deletionPresentation.message}</Text>
+                  </View>
+                ) : (
+                  <View style={styles.accountDeletionActions}>
+                    <Pressable
+                      accessibilityRole="button"
+                      accessibilityLabel="Cancel data deletion"
+                      onPress={onDeleteDataCancel}
+                      style={({ pressed }) => [styles.accountDeletionAction, pressed && styles.settingsPressed]}>
+                      <Text style={styles.accountDeletionCancelText}>{ACCOUNT_DELETION_COPY.cancel}</Text>
+                    </Pressable>
+                    <Pressable
+                      accessibilityRole="button"
+                      accessibilityLabel={accountDeletionStatus === 'failed' ? 'Retry data deletion' : 'Confirm data deletion'}
+                      onPress={onDeleteDataConfirm}
+                      style={({ pressed }) => [styles.accountDeletionAction, pressed && styles.settingsPressed]}>
+                      <Text style={styles.accountDeletionConfirmText}>
+                        {accountDeletionStatus === 'failed' ? 'Try again' : ACCOUNT_DELETION_COPY.confirm}
+                      </Text>
+                    </Pressable>
+                  </View>
+                )}
+              </>
+            )}
+          </View>
+        </View>
+      )}
     </Animated.View>
   );
 }
@@ -10539,7 +10714,7 @@ const styles = StyleSheet.create({
     position: 'absolute',
     left: 30,
     right: 30,
-    bottom: 28,
+    bottom: 64,
     gap: 8,
   },
   settingsContactLink: {
@@ -10562,6 +10737,106 @@ const styles = StyleSheet.create({
     fontSize: 13,
     lineHeight: 16,
     fontWeight: '700',
+  },
+  settingsDeleteDataButton: {
+    position: 'absolute',
+    right: 30,
+    bottom: 24,
+    minHeight: 30,
+    justifyContent: 'center',
+    paddingHorizontal: 2,
+  },
+  settingsDeleteDataText: {
+    color: '#FF6B6B',
+    fontFamily: Fonts.sans,
+    fontSize: 12,
+    lineHeight: 15,
+    fontWeight: '700',
+  },
+  accountDeletionOverlay: {
+    position: 'absolute',
+    left: 0,
+    right: 0,
+    top: 0,
+    bottom: 0,
+    zIndex: 4,
+    alignItems: 'center',
+    justifyContent: 'center',
+    paddingHorizontal: 24,
+    backgroundColor: 'rgba(0, 0, 0, 0.56)',
+  },
+  accountDeletionDialog: {
+    width: '100%',
+    maxWidth: 360,
+    borderRadius: 26,
+    padding: 20,
+    gap: 13,
+    backgroundColor: 'rgba(48, 48, 48, 0.94)',
+    borderWidth: StyleSheet.hairlineWidth,
+    borderColor: 'rgba(255, 255, 255, 0.2)',
+    shadowColor: '#000000',
+    shadowOpacity: 0.32,
+    shadowOffset: { width: 0, height: 18 },
+    shadowRadius: 32,
+  },
+  accountDeletionTitle: {
+    color: PAPER,
+    fontFamily: Fonts.sans,
+    fontSize: 20,
+    lineHeight: 25,
+    fontWeight: '800',
+  },
+  accountDeletionBody: {
+    color: 'rgba(255, 255, 255, 0.66)',
+    fontFamily: Fonts.sans,
+    fontSize: 13,
+    lineHeight: 19,
+    fontWeight: '600',
+  },
+  accountDeletionActions: {
+    flexDirection: 'row',
+    justifyContent: 'flex-end',
+    gap: 8,
+    marginTop: 3,
+  },
+  accountDeletionAction: {
+    minWidth: 74,
+    minHeight: 40,
+    alignItems: 'center',
+    justifyContent: 'center',
+    paddingHorizontal: 14,
+  },
+  accountDeletionCancelText: {
+    color: 'rgba(255, 255, 255, 0.72)',
+    fontFamily: Fonts.sans,
+    fontSize: 14,
+    fontWeight: '700',
+  },
+  accountDeletionConfirmText: {
+    color: '#FF6B6B',
+    fontFamily: Fonts.sans,
+    fontSize: 14,
+    fontWeight: '800',
+  },
+  accountDeletionProgressRow: {
+    minHeight: 44,
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 11,
+  },
+  accountDeletionProgressText: {
+    color: 'rgba(255, 255, 255, 0.78)',
+    fontFamily: Fonts.sans,
+    fontSize: 13,
+    fontWeight: '700',
+  },
+  accountDeletionSuccessText: {
+    color: PAPER,
+    fontFamily: Fonts.sans,
+    fontSize: 17,
+    lineHeight: 22,
+    textAlign: 'center',
+    fontWeight: '800',
   },
   settingsHelpSection: {
     borderRadius: 24,

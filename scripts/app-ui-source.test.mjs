@@ -628,4 +628,21 @@ describe('menu source layout', () => {
     assert.match(collectionSource, /return;\n\s+}\n\n\s+try \{/);
     assert.match(collectionSource, /getSaveActionLabel\(\{ confirming: copyAnchor\.saveConfirming === true, saved: copyAnchor\.saved === true \}\)/);
   });
+
+  it('deletes account data from a small red Settings action without terminating the app', () => {
+    const settingsSource = getFunctionSource('SettingsOverlay', 'CategoryBackgroundPicker');
+    const appFlowSource = getFunctionSource('SnagApp', 'CategoryTray');
+
+    assert.match(settingsSource, /accessibilityLabel="Delete my data"/);
+    assert.match(settingsSource, /styles\.settingsDeleteDataText/);
+    assert.match(appSource, /settingsDeleteDataText:[\s\S]*color: '#FF6B6B'/);
+    assert.match(settingsSource, /ACCOUNT_DELETION_COPY\.body/);
+    assert.match(appFlowSource, /await deleteMySnagDataAsync/);
+    assert.match(appFlowSource, /shouldClearLocalData/);
+    assert.match(appFlowSource, /await clearAllSnagLocalDataAsync/);
+    assert.ok(appFlowSource.indexOf('await deleteMySnagDataAsync') < appFlowSource.indexOf('await clearAllSnagLocalDataAsync'));
+    assert.match(appFlowSource, /setSocialBootstrapEnabled\(false\)/);
+    assert.match(appFlowSource, /setMode\('collection'\)/);
+    assert.doesNotMatch(appFlowSource, /exit\(|terminate/);
+  });
 });

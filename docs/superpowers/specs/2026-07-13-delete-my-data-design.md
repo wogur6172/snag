@@ -71,8 +71,9 @@ After the function confirms successful cloud deletion, the client:
 
 1. Signs out the deleted session locally and clears Snag-owned local directories and auth storage.
 2. Replaces in-memory state with the normal first-install defaults.
-3. Closes Settings and shows the initial `Category 1` collection experience.
-4. Suppresses automatic social-profile creation until the user intentionally opens Social again.
+3. Shows `Your data has been deleted.` briefly without terminating the app.
+4. Closes Settings and shows the initial `Category 1` collection experience.
+5. Suppresses automatic social-profile creation until the user intentionally opens Social again.
 
 ### Server
 

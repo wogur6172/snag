@@ -10,6 +10,8 @@ import { Gesture, GestureDetector } from 'react-native-gesture-handler';
 import { useSharedValue } from 'react-native-reanimated';
 import { Fragment, type ComponentProps, type ReactNode, useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import {
+  AccessibilityInfo,
+  ActivityIndicator,
   Animated,
   Easing,
   Keyboard,
@@ -149,6 +151,11 @@ import {
   type SnagUserSettings,
 } from '@/utils/snag-library';
 import {
+  getCaptureActivityDelayMs,
+  getCaptureActivityPresentation,
+  type CaptureActivity,
+} from '@/utils/capture-feedback';
+import {
   getAutoCutoutBadge,
   getAutoCutoutSymbol,
   getCameraCaptureFlashMode,
@@ -185,7 +192,6 @@ import {
   getAllCollectionSnagFrame,
   getBoardPasteLongPressConfig,
   getCaptureCategoryId,
-  getCaptureProcessingPresentation,
   getCategoryBackground,
   getCategoryBackgroundStrength,
   getCategoryHeaderBadgeChromeConfig,
@@ -294,6 +300,24 @@ type TrashDragState = {
 function waitForNextFrame() {
   return new Promise<void>((resolve) => {
     requestAnimationFrame(() => resolve());
+  });
+}
+
+function waitForPaint() {
+  return new Promise<void>((resolve) => {
+    requestAnimationFrame(() => {
+      requestAnimationFrame(() => resolve());
+    });
+  });
+}
+
+function waitForDuration(durationMs: number) {
+  if (durationMs <= 0) {
+    return Promise.resolve();
+  }
+
+  return new Promise<void>((resolve) => {
+    setTimeout(resolve, durationMs);
   });
 }
 
@@ -5310,6 +5334,116 @@ function BrushSizeSlider({
   );
 }
 
+function CaptureActivityOverlay({ activity }: { activity: CaptureActivity }) {
+  const { height: screenHeight } = useWindowDimensions();
+  const presentation = getCaptureActivityPresentation(activity);
+  const overlayOpacity = useRef(new Animated.Value(0)).current;
+  const scanProgress = useRef(new Animated.Value(0)).current;
+  const [reduceMotionEnabled, setReduceMotionEnabled] = useState(false);
+
+  useEffect(() => {
+    let mounted = true;
+
+    AccessibilityInfo.isReduceMotionEnabled().then((enabled) => {
+      if (mounted) {
+        setReduceMotionEnabled(enabled);
+      }
+    });
+
+    const subscription = AccessibilityInfo.addEventListener('reduceMotionChanged', setReduceMotionEnabled);
+
+    return () => {
+      mounted = false;
+      subscription.remove();
+    };
+  }, []);
+
+  useEffect(() => {
+    overlayOpacity.stopAnimation();
+    scanProgress.stopAnimation();
+
+    if (!presentation.showOverlay) {
+      overlayOpacity.setValue(0);
+      scanProgress.setValue(0);
+      return;
+    }
+
+    overlayOpacity.setValue(0);
+    Animated.timing(overlayOpacity, {
+      duration: 160,
+      easing: Easing.out(Easing.quad),
+      toValue: 1,
+      useNativeDriver: true,
+    }).start();
+
+    if (reduceMotionEnabled) {
+      return;
+    }
+
+    scanProgress.setValue(0);
+    const scanAnimation = Animated.loop(
+      Animated.sequence([
+        Animated.timing(scanProgress, {
+          duration: 1_350,
+          easing: Easing.inOut(Easing.quad),
+          toValue: 1,
+          useNativeDriver: true,
+        }),
+        Animated.delay(180),
+        Animated.timing(scanProgress, {
+          duration: 0,
+          toValue: 0,
+          useNativeDriver: true,
+        }),
+      ]),
+    );
+    scanAnimation.start();
+
+    return () => {
+      scanAnimation.stop();
+    };
+  }, [overlayOpacity, presentation.showOverlay, reduceMotionEnabled, scanProgress]);
+
+  if (!presentation.showOverlay) {
+    return null;
+  }
+
+  const scanTranslateY = scanProgress.interpolate({
+    inputRange: [0, 1],
+    outputRange: [-12, Math.max(screenHeight - 12, 12)],
+  });
+
+  return (
+    <Animated.View
+      accessibilityLabel={presentation.label}
+      accessibilityRole="progressbar"
+      accessible
+      pointerEvents={presentation.blocksInteraction ? 'auto' : 'none'}
+      style={[styles.captureActivityOverlay, { opacity: overlayOpacity }]}>
+      <View style={styles.captureActivityVeil} />
+      {!reduceMotionEnabled && (
+        <Animated.View
+          pointerEvents="none"
+          style={[
+            styles.captureScanLine,
+            { transform: [{ translateY: scanTranslateY }] },
+          ]}
+        />
+      )}
+      <View pointerEvents="none" style={styles.captureActivityStatusWrap}>
+        <GlassView
+          colorScheme="dark"
+          glassEffectStyle={{ style: 'regular', animate: true, animationDuration: 0.18 }}
+          tintColor="rgba(20, 20, 20, 0.58)"
+          style={styles.captureActivityPill}>
+          <ActivityIndicator color="#FFFFFF" size="small" />
+          <Text style={styles.captureActivityText}>{presentation.label}</Text>
+        </GlassView>
+      </View>
+    </Animated.View>
+  );
+}
+
 function CaptureFlow({
   onClose,
   onComplete,
@@ -5318,17 +5452,18 @@ function CaptureFlow({
   onComplete: (asset?: CompletedSnagAsset) => void;
 }) {
   const cameraRef = useRef<CameraView | null>(null);
-  const processingTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
   const cutoutNoticeTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
   const cameraPinch = useRef({ distance: 0, zoom: 0 });
   const cameraZoomRef = useRef(0);
   const cameraPermissionRequestStarted = useRef(false);
+  const shutterFlashOpacity = useRef(new Animated.Value(0)).current;
   const [permission, requestPermission] = useCameraPermissions();
   const [cameraAvailable, setCameraAvailable] = useState<boolean | null>(Platform.OS !== 'web');
   const [cameraMountError, setCameraMountError] = useState('');
   const [cameraReady, setCameraReady] = useState(false);
   const [cameraZoom, setCameraZoom] = useState(0);
   const [stage, setStage] = useState<CaptureStage>('live');
+  const [captureActivity, setCaptureActivity] = useState<CaptureActivity>('idle');
   const [facing, setFacing] = useState<CameraType>('back');
   const [flash, setFlash] = useState<FlashMode>('off');
   const [capturedAsset, setCapturedAsset] = useState<CapturedAsset | null>(null);
@@ -5356,9 +5491,6 @@ function CaptureFlow({
     if (Platform.OS !== 'web') {
       return () => {
         mounted = false;
-        if (processingTimer.current) {
-          clearTimeout(processingTimer.current);
-        }
         if (cutoutNoticeTimer.current) {
           clearTimeout(cutoutNoticeTimer.current);
         }
@@ -5379,9 +5511,6 @@ function CaptureFlow({
 
     return () => {
       mounted = false;
-      if (processingTimer.current) {
-        clearTimeout(processingTimer.current);
-      }
       if (cutoutNoticeTimer.current) {
         clearTimeout(cutoutNoticeTimer.current);
       }
@@ -5499,46 +5628,30 @@ function CaptureFlow({
     };
   }
 
-  async function startProcessing(asset: CapturedAsset) {
-    setCapturedAsset(asset);
-    clearCutoutNotice();
-    setManualMaskPoints([]);
-    setEditMode('erase');
-    setStage('processing');
-    if (processingTimer.current) {
-      clearTimeout(processingTimer.current);
-    }
-
+  async function handleCapturedAsset(asset: CapturedAsset) {
     if (!asset.uri) {
-      processingTimer.current = setTimeout(() => {
-        setStage('refine');
-      }, 850);
+      setCaptureActivity('idle');
       return;
     }
 
-    try {
-      const result = await cutoutImageAsync(asset.uri);
-      setCapturedAsset({
-        ...asset,
-        height: result.height,
-        uri: result.uri,
-        width: result.width,
-      });
-    } catch {
-      showCutoutNotice(getCutoutFailureNotice());
-    } finally {
-      setStage('refine');
-    }
-  }
-
-  async function handleCapturedAsset(asset: CapturedAsset) {
+    const activityStartedAtMs = Date.now();
     setCapturedAsset(asset);
     clearCutoutNotice();
     setManualMaskPoints([]);
     setEditMode('erase');
+    setCaptureActivity(autoCutout ? 'recognizing' : 'preparing-manual');
+    setStage('processing');
+    await waitForPaint();
 
-    const hasImageUri = Boolean(asset.uri);
-    const isSupported = hasImageUri ? await ensureCutoutSupport() : true;
+    const hasImageUri = true;
+    let isSupported = true;
+    if (autoCutout) {
+      try {
+        isSupported = await ensureCutoutSupport();
+      } catch {
+        isSupported = false;
+      }
+    }
     const route = getCaptureCutoutRoute({
       autoCutoutEnabled: autoCutout,
       hasImageUri,
@@ -5546,26 +5659,63 @@ function CaptureFlow({
     });
 
     if (route === 'none') {
+      setCaptureActivity('idle');
+      setStage('live');
       return;
     }
+
+    let completedAsset = asset;
+    let nextNotice = '';
 
     if (route === 'manual') {
-      handleManualCutout(autoCutout && hasImageUri && !isSupported ? getCutoutUnsupportedNotice() : '');
-      return;
+      setCaptureActivity('preparing-manual');
+      nextNotice = autoCutout && !isSupported ? getCutoutUnsupportedNotice() : '';
+    } else {
+      try {
+        const result = await cutoutImageAsync(asset.uri);
+        completedAsset = {
+          ...asset,
+          height: result.height,
+          uri: result.uri,
+          width: result.width,
+        };
+      } catch {
+        nextNotice = getCutoutFailureNotice();
+      }
     }
 
-    await startProcessing(asset);
-  }
-
-  function handleManualCutout(nextNotice = '') {
+    await waitForDuration(getCaptureActivityDelayMs({
+      nowMs: Date.now(),
+      startedAtMs: activityStartedAtMs,
+    }));
+    setCapturedAsset(completedAsset);
+    setCaptureActivity('idle');
+    setStage('refine');
     if (nextNotice) {
       showCutoutNotice(nextNotice);
-    } else {
-      clearCutoutNotice();
     }
-    setManualMaskPoints([]);
-    setEditMode('erase');
-    setStage('refine');
+    void Haptics.selectionAsync().catch(() => undefined);
+  }
+
+  function playShutterFeedback() {
+    setCaptureActivity('capturing');
+    shutterFlashOpacity.stopAnimation();
+    shutterFlashOpacity.setValue(0);
+    Animated.sequence([
+      Animated.timing(shutterFlashOpacity, {
+        duration: 45,
+        easing: Easing.out(Easing.quad),
+        toValue: 0.88,
+        useNativeDriver: true,
+      }),
+      Animated.timing(shutterFlashOpacity, {
+        duration: 190,
+        easing: Easing.out(Easing.cubic),
+        toValue: 0,
+        useNativeDriver: true,
+      }),
+    ]).start();
+    void Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Soft).catch(() => undefined);
   }
 
   async function handleSaveRefinedSnag() {
@@ -5621,6 +5771,7 @@ function CaptureFlow({
         return;
       }
 
+      playShutterFeedback();
       const photo = await cameraRef.current.takePictureAsync({
         quality: 0.92,
         shutterSound: false,
@@ -5632,6 +5783,8 @@ function CaptureFlow({
         uri: photo.uri,
         width: photo.width,
       });
+    } catch {
+      setCaptureActivity('idle');
     } finally {
       setIsCapturing(false);
     }
@@ -5700,6 +5853,7 @@ function CaptureFlow({
     updateCameraZoom(0);
     setManualMaskPoints([]);
     setIsSavingRefine(false);
+    setCaptureActivity('idle');
     clearCutoutNotice();
     setIsCapturing(false);
     setEditMode('erase');
@@ -5722,9 +5876,6 @@ function CaptureFlow({
     ? ''
     : permission?.canAskAgain === false ? 'Open settings' : 'Allow camera';
 
-  const processingPresentation = getCaptureProcessingPresentation({
-    hasImageUri: Boolean(capturedAsset?.uri),
-  });
   const autoCutoutBadge = autoCutout ? getAutoCutoutBadge(true) : null;
   const captureFlash = getCameraCaptureFlashMode({ facing, flash });
 
@@ -5784,6 +5935,14 @@ function CaptureFlow({
               </View>
             )}
           </View>
+
+          <Animated.View
+            pointerEvents="none"
+            style={[
+              styles.captureShutterFlash,
+              { opacity: shutterFlashOpacity },
+            ]}
+          />
 
           <View style={styles.captureTopBar}>
             <Pressable
@@ -5868,7 +6027,7 @@ function CaptureFlow({
 
       {stage === 'processing' && (
         <View style={styles.processingScreen}>
-          {processingPresentation.showCapturedFrame && capturedAsset?.uri && (
+          {capturedAsset?.uri && (
             <Image
               cachePolicy="memory-disk"
               contentFit="cover"
@@ -5877,6 +6036,7 @@ function CaptureFlow({
               transition={0}
             />
           )}
+          <CaptureActivityOverlay activity={captureActivity} />
         </View>
       )}
 
@@ -8535,6 +8695,15 @@ const styles = StyleSheet.create({
     flex: 1,
     backgroundColor: '#050505',
   },
+  captureShutterFlash: {
+    position: 'absolute',
+    top: 0,
+    right: 0,
+    bottom: 0,
+    left: 0,
+    zIndex: 2,
+    backgroundColor: '#FFFFFF',
+  },
   cameraPreviewFrame: {
     flex: 1,
     position: 'relative',
@@ -8779,6 +8948,62 @@ const styles = StyleSheet.create({
   processingImage: {
     width: '100%',
     height: '100%',
+  },
+  captureActivityOverlay: {
+    position: 'absolute',
+    top: 0,
+    right: 0,
+    bottom: 0,
+    left: 0,
+    zIndex: 12,
+    overflow: 'hidden',
+  },
+  captureActivityVeil: {
+    position: 'absolute',
+    top: 0,
+    right: 0,
+    bottom: 0,
+    left: 0,
+    backgroundColor: 'rgba(0, 0, 0, 0.18)',
+  },
+  captureScanLine: {
+    position: 'absolute',
+    left: 18,
+    right: 18,
+    top: 0,
+    height: 2,
+    borderRadius: 1,
+    backgroundColor: 'rgba(255, 255, 255, 0.78)',
+    shadowColor: '#FFFFFF',
+    shadowOpacity: 0.52,
+    shadowOffset: { width: 0, height: 0 },
+    shadowRadius: 9,
+  },
+  captureActivityStatusWrap: {
+    position: 'absolute',
+    left: 24,
+    right: 24,
+    bottom: 38,
+    alignItems: 'center',
+  },
+  captureActivityPill: {
+    minHeight: 48,
+    borderRadius: 24,
+    paddingHorizontal: 18,
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'center',
+    gap: 10,
+    overflow: 'hidden',
+    borderWidth: StyleSheet.hairlineWidth,
+    borderColor: 'rgba(255, 255, 255, 0.2)',
+  },
+  captureActivityText: {
+    color: '#FFFFFF',
+    fontFamily: Fonts.sans,
+    fontSize: 15,
+    lineHeight: 19,
+    fontWeight: '700',
   },
   refineScreen: {
     flex: 1,

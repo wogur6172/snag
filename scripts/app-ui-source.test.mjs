@@ -511,6 +511,23 @@ describe('menu source layout', () => {
     assert.match(source, /Linking\.openSettings\(\)/);
   });
 
+  it('commits shutter and recognition feedback before expensive capture work', () => {
+    const startIndex = appSource.indexOf('function CaptureFlow');
+    const endIndex = appSource.indexOf('function CameraCanvas', startIndex + 1);
+
+    assert.notEqual(startIndex, -1, 'CaptureFlow should exist');
+    assert.notEqual(endIndex, -1, 'CameraCanvas should follow CaptureFlow');
+
+    const source = appSource.slice(startIndex, endIndex);
+
+    assert.match(source, /setCaptureActivity\('capturing'\)/);
+    assert.match(source, /setStage\('processing'\)[\s\S]*?await waitForPaint\(\)[\s\S]*?ensureCutoutSupport\(\)/);
+    assert.match(source, /<CaptureActivityOverlay/);
+    assert.match(appSource, /function CaptureActivityOverlay/);
+    assert.match(appSource, /useNativeDriver: true/);
+    assert.match(appSource, /styles\.captureShutterFlash/);
+  });
+
   it('passes the existing camera flow into collection starter prompts', () => {
     assert.match(appSource, /onOpenCamera=\{handleOpenCameraFlow\}/);
   });

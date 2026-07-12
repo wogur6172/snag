@@ -15,6 +15,7 @@ type RealSnagItem = {
   imageHeight?: number;
   imageUri?: string;
   imageWidth?: number;
+  previewUri?: string;
   layerIndex?: number;
   originSnagId?: string;
   rotate: string;

@@ -11,6 +11,7 @@ import Animated, {
 import { StyleSheet, Text, View } from 'react-native';
 
 import { type SnagItem } from '@/data/snags';
+import { getSnagRenderImageUri } from '@/utils/local-snag-preview';
 import {
   clampSnagTranslation,
   getCopyLongPressConfig,
@@ -60,19 +61,19 @@ export type SnagCopyRequestPoint = SnagBoardPoint & {
   screenY: number;
 };
 
-const OUTLINE_OFFSETS = [
+const ACTIVE_OUTLINE_OFFSETS = [
   { x: -4, y: 0 },
   { x: 4, y: 0 },
   { x: 0, y: -4 },
   { x: 0, y: 4 },
+];
+
+const STAGED_OUTLINE_OFFSETS = [
+  ...ACTIVE_OUTLINE_OFFSETS,
   { x: -3, y: -3 },
   { x: 3, y: -3 },
   { x: -3, y: 3 },
   { x: 3, y: 3 },
-  { x: -6, y: 0 },
-  { x: 6, y: 0 },
-  { x: 0, y: -6 },
-  { x: 0, y: 6 },
 ];
 
 const TRANSFORM_EPSILON = 0.01;
@@ -132,7 +133,7 @@ export function TransformableSnag({
   const imageAspect = item.imageWidth && item.imageHeight ? item.imageHeight / item.imageWidth : 1;
   const itemWidth = textLayout?.width ?? size;
   const itemHeight = textLayout?.height ?? size * Math.max(0.55, Math.min(imageAspect, 1.45));
-  const imageUri = item.imageUri;
+  const imageUri = getSnagRenderImageUri(item);
   const baseX = x ?? item.canvasX;
   const baseY = y ?? item.canvasY;
   const baseWidth = useSharedValue(itemWidth);
@@ -670,18 +671,18 @@ export function TransformableSnag({
               </Text>
             ) : (
               <>
-            {renderCutoutOutline && imageUri && (
+            {!isStaged && renderCutoutOutline && imageUri && (
               <Animated.View pointerEvents="none" style={[styles.moveReadyOutline, moveReadyOutlineStyle]}>
                 <CutoutOutline tintColor="#E8E8E2" uri={imageUri} />
               </Animated.View>
             )}
-            {isStaged && imageUri && <CutoutOutline uri={imageUri} />}
+            {isStaged && imageUri && <CutoutOutline dense uri={imageUri} />}
             {imageUri && <Image
               allowDownscaling
               cachePolicy="memory-disk"
               contentFit="contain"
               enforceEarlyResizing
-              source={{ uri: imageUri }}
+              source={imageUri}
               style={styles.image}
               transition={0}
             />}
@@ -695,21 +696,25 @@ export function TransformableSnag({
 }
 
 function CutoutOutline({
+  dense = false,
   tintColor = '#FFFFFF',
   uri,
 }: {
+  dense?: boolean;
   tintColor?: string;
   uri: string;
 }) {
+  const offsets = dense ? STAGED_OUTLINE_OFFSETS : ACTIVE_OUTLINE_OFFSETS;
+
   return (
     <View pointerEvents="none" style={styles.cutoutOutline}>
-      {OUTLINE_OFFSETS.map((offset) => (
+      {offsets.map((offset) => (
         <Image
           allowDownscaling
           contentFit="contain"
           enforceEarlyResizing
           key={`${offset.x}-${offset.y}`}
-          source={{ uri }}
+          source={uri}
           style={[
             styles.image,
             styles.outlineImage,

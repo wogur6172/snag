@@ -5,7 +5,6 @@
   "private": true,
   "main": "index.js",
   "peerDependencies": {
-    "expo": "*",
-    "expo-modules-core": "*"
+    "expo": "*"
   }
 }

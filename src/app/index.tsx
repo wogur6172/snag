@@ -12,7 +12,6 @@ import { Fragment, type ComponentProps, type ReactNode, useCallback, useEffect, 
 import {
   Animated,
   Easing,
-  InteractionManager,
   Keyboard,
   type NativeScrollEvent,
   type NativeSyntheticEvent,
@@ -106,8 +105,13 @@ import { copySnagImageAsync, getClipboardSnagImageAsync } from '@/native/snag-cl
 import {
   loadSnagLibraryAsync,
   persistSnagImageAsync,
+  persistSnagPreviewAsync,
   saveSnagLibraryAsync,
 } from '@/native/snag-library-storage';
+import {
+  getSnagPreloadImageUri,
+  getSnagRenderImageUri,
+} from '@/utils/local-snag-preview';
 import {
   mergeSocialBoardSnapshotWithLocalCache,
   type SocialBoardCacheState,
@@ -330,7 +334,7 @@ function getSettingsProfileNameDraft(profileName: string) {
 async function preloadSnagImages(snags: SnagItem[]) {
   const imageUris = Array.from(new Set(
     snags
-      .map((snag) => snag.imageUri)
+      .map(getSnagPreloadImageUri)
       .filter((uri): uri is string => Boolean(uri)),
   ));
 
@@ -1212,7 +1216,7 @@ function StickerView({ item }: { item: SnagItem }) {
       <Image
         cachePolicy="memory-disk"
         contentFit="contain"
-        source={{ uri: item.imageUri }}
+        source={getSnagRenderImageUri(item)}
         style={styles.capturedStickerImage}
         transition={0}
       />
@@ -1243,7 +1247,7 @@ function StickerOutline({ uri }: { uri: string }) {
           cachePolicy="memory-disk"
           contentFit="contain"
           key={`${offset.x}-${offset.y}`}
-          source={{ uri }}
+          source={uri}
           style={[
             styles.stickerOutlineImage,
             { transform: [{ translateX: offset.x }, { translateY: offset.y }] },
@@ -1314,11 +1318,11 @@ function AllCollectionSticker({
         },
         selected && styles.allCollectionStickerSelected,
       ]}>
-      <StickerOutline uri={item.imageUri} />
+      <StickerOutline uri={getSnagRenderImageUri(item) ?? item.imageUri} />
       <Image
         cachePolicy="memory-disk"
         contentFit="contain"
-        source={{ uri: item.imageUri }}
+        source={getSnagRenderImageUri(item)}
         style={styles.allCollectionStickerImage}
         transition={0}
       />
@@ -1528,6 +1532,7 @@ export default function SnagApp() {
 
   useEffect(() => {
     let isMounted = true;
+    let previewTask: ReturnType<typeof requestIdleCallback> | null = null;
 
     loadSnagLibraryAsync()
       .then(async (library) => {
@@ -1547,6 +1552,38 @@ export default function SnagApp() {
         setSelectedCategoryId(library.selectedCategoryId);
         setSnagCount(library.snagCount);
         setSnags(library.snags);
+
+        const previewCandidates = library.snags.filter((snag) => (
+          snag.kind !== 'text' && Boolean(snag.imageUri) && !snag.previewUri
+        ));
+
+        if (previewCandidates.length > 0) {
+          previewTask = requestIdleCallback(() => {
+            void (async () => {
+              for (const candidate of previewCandidates) {
+                if (!isMounted) {
+                  return;
+                }
+
+                try {
+                  const optimizedSnag = await persistSnagPreviewAsync(candidate);
+
+                  if (optimizedSnag.previewUri && optimizedSnag.previewUri !== candidate.previewUri) {
+                    setSnags((currentSnags) => currentSnags.map((snag) => (
+                      snag.id === candidate.id
+                        ? { ...snag, previewUri: optimizedSnag.previewUri }
+                        : snag
+                    )));
+                  }
+                } catch (error) {
+                  console.warn('Could not prepare Snag render preview', error);
+                }
+
+                await new Promise<void>((resolve) => requestAnimationFrame(() => resolve()));
+              }
+            })();
+          }, { timeout: 1200 });
+        }
       })
       .catch((error) => {
         console.warn('Could not load Snag library', error);
@@ -1559,11 +1596,14 @@ export default function SnagApp() {
 
     return () => {
       isMounted = false;
+      if (previewTask !== null) {
+        cancelIdleCallback(previewTask);
+      }
     };
   }, []);
 
   const snagsImageCacheKey = useMemo(() => (
-    Array.from(new Set(snags.map((snag) => snag.imageUri).filter((uri): uri is string => Boolean(uri)))).join('\n')
+    Array.from(new Set(snags.map(getSnagPreloadImageUri).filter((uri): uri is string => Boolean(uri)))).join('\n')
   ), [snags]);
 
   const animateSurfaceTransition = useCallback((toValue: number) => {
@@ -1851,9 +1891,9 @@ export default function SnagApp() {
     }
 
     let cancelled = false;
-    let interactionTask: { cancel?: () => void } | null = null;
+    let idleTask: ReturnType<typeof requestIdleCallback> | null = null;
     const warmupTimer = setTimeout(() => {
-      interactionTask = InteractionManager.runAfterInteractions(() => {
+      idleTask = requestIdleCallback(() => {
         if (cancelled) {
           return;
         }
@@ -1885,13 +1925,15 @@ export default function SnagApp() {
             boardWarmupKeysRef.current.add(warmupRequest.key);
             setBoardWarmupTick((tick) => tick + 1);
           });
-      });
+      }, { timeout: 1200 });
     }, BOARD_IDLE_WARMUP_DELAY_MS);
 
     return () => {
       cancelled = true;
       clearTimeout(warmupTimer);
-      interactionTask?.cancel?.();
+      if (idleTask !== null) {
+        cancelIdleCallback(idleTask);
+      }
     };
   }, [
     boardRooms,
@@ -1973,33 +2015,6 @@ export default function SnagApp() {
       applySnagTransform(currentRoomSnags, snagId, transform),
       snagId,
     ).map((snag) => (
-      snag.id === snagId
-        ? { ...snag, updatedAt }
-        : snag
-    ));
-    const transformedSnag = nextRoomSnags.find((snag) => snag.id === snagId);
-
-    boardSnagsByRoomIdRef.current = {
-      ...boardSnagsByRoomIdRef.current,
-      [roomId]: nextRoomSnags,
-    };
-    setBoardSnagsByRoomId(boardSnagsByRoomIdRef.current);
-    cacheCurrentSocialBoardSnapshot({
-      snagsByRoomId: boardSnagsByRoomIdRef.current,
-    });
-
-    if (transformedSnag) {
-      persistBoardSnagTransform(roomId, transformedSnag);
-    }
-  }
-
-  function handleSnagBringToFront(snagId: string) {
-    setSnags((currentSnags) => bringSnagToFront(currentSnags, snagId));
-  }
-
-  function handleBoardSnagBringToFront(roomId: string, snagId: string) {
-    const updatedAt = getCurrentTimestampMs();
-    const nextRoomSnags = bringSnagToFront(boardSnagsByRoomIdRef.current[roomId] ?? [], snagId).map((snag) => (
       snag.id === snagId
         ? { ...snag, updatedAt }
         : snag
@@ -2117,6 +2132,7 @@ export default function SnagApp() {
                 imageHeight: storedSnag.imageHeight,
                 imageUri: storedSnag.imageUri,
                 imageWidth: storedSnag.imageWidth,
+                previewUri: storedSnag.previewUri,
               }
             : snag
         )));
@@ -2202,6 +2218,7 @@ export default function SnagApp() {
           imageHeight: storedSnag.imageHeight,
           imageUri: storedSnag.imageUri,
           imageWidth: storedSnag.imageWidth,
+          previewUri: storedSnag.previewUri,
           pendingSync: true,
         };
 
@@ -2479,6 +2496,7 @@ export default function SnagApp() {
               imageHeight: storedSnag.imageHeight,
               imageUri: storedSnag.imageUri,
               imageWidth: storedSnag.imageWidth,
+              previewUri: storedSnag.previewUri,
             }
           : snag
       )));
@@ -3582,7 +3600,6 @@ export default function SnagApp() {
                 closeCategoryActions();
               }}
               onPasteSnag={handlePasteSnag}
-              onSnagBringToFront={handleSnagBringToFront}
               onSnagInteractionStart={settleStagedSnag}
               onSnagTransformEnd={handleSnagTransformEnd}
               onTextSnagEditRequest={handleOpenCollectionTextEdit}
@@ -3626,7 +3643,6 @@ export default function SnagApp() {
               onDrawingStrokeComplete={handleBoardDrawingStrokeComplete}
               onPasteSnag={handlePasteBoardSnag}
               onSelectRoom={handleSelectBoardRoom}
-              onSnagBringToFront={handleBoardSnagBringToFront}
               onSnagTransformEnd={handleBoardSnagTransformEnd}
               onTextSnagEditRequest={handleOpenBoardTextEdit}
               onSurfaceSwipeCancel={cancelSurfaceTransition}
@@ -5958,7 +5974,6 @@ function CollectionView({
   onDrawingStrokeComplete,
   onToggleAllSelection,
   onPasteSnag,
-  onSnagBringToFront,
   onSnagInteractionStart,
   onSnagTransformEnd,
   onTextSnagEditRequest,
@@ -5994,7 +6009,6 @@ function CollectionView({
   onDrawingStrokeComplete: (categoryId: string, stroke: SnagDrawingStroke) => void;
   onToggleAllSelection: (snagId: string) => void;
   onPasteSnag: (request: PasteSnagRequest) => void;
-  onSnagBringToFront: (id: string) => void;
   onSnagInteractionStart: (id: string) => void;
   onSnagTransformEnd: (id: string, transform: SnagTransformPatch) => void;
   onTextSnagEditRequest: (snagId: string) => void;
@@ -6540,7 +6554,6 @@ function CollectionView({
     }));
     clearTransientActions();
     onTransientActionStart();
-    onSnagBringToFront(snagId);
     updateTrashState({
       armedId: null,
       draggingId: snagId,
@@ -7143,7 +7156,6 @@ function BoardView({
   onJoinRoom,
   onPasteSnag,
   onSelectRoom,
-  onSnagBringToFront,
   onSnagTransformEnd,
   onTextSnagEditRequest,
   onSurfaceSwipeCancel,
@@ -7169,7 +7181,6 @@ function BoardView({
   onJoinRoom: (inviteCode: string) => Promise<boolean>;
   onPasteSnag: (request: BoardPasteSnagRequest) => void;
   onSelectRoom: (roomId: string) => void;
-  onSnagBringToFront: (roomId: string, snagId: string) => void;
   onSnagTransformEnd: (roomId: string, snagId: string, transform: SnagTransformPatch) => void;
   onTextSnagEditRequest: (roomId: string, snagId: string) => void;
   onSurfaceSwipeCancel: () => void;
@@ -7733,9 +7744,6 @@ function BoardView({
     boardViewportOffsetY.set(scrollOffsetRef.current.y);
     clearTransientActions();
     onTransientActionStart();
-    if (activeRoomId) {
-      onSnagBringToFront(activeRoomId, snagId);
-    }
     updateTrashState({
       armedId: null,
       draggingId: snagId,

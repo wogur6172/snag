@@ -168,6 +168,7 @@ function normalizeSnags(value: unknown): SnagItem[] {
       id: candidate.id,
       ...(candidateKind === 'text' ? { kind: 'text' as const, text: candidateText } : {}),
       ...(isString(candidate.imageUri) ? { imageUri: candidate.imageUri } : {}),
+      ...(isString(candidate.previewUri) ? { previewUri: candidate.previewUri } : {}),
       ...(isString(candidate.originSnagId) ? { originSnagId: candidate.originSnagId } : {}),
       rotate: candidate.rotate,
       size: candidate.size,

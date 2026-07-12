@@ -23,6 +23,7 @@ export type SnagItem = {
   imageHeight?: number;
   imageUri?: string;
   imageWidth?: number;
+  previewUri?: string;
   layerIndex?: number;
   originSnagId?: string;
   pendingSync?: boolean;

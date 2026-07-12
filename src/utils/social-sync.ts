@@ -335,6 +335,7 @@ export function mapBoardSnagRowsToSnags({
       ...(typeof row.image_height === 'number' ? { imageHeight: row.image_height } : {}),
       ...(typeof row.image_width === 'number' ? { imageWidth: row.image_width } : {}),
       layerIndex: typeof row.layer_index === 'number' ? row.layer_index : 0,
+      ...(row.owner_id ? { ownerId: row.owner_id } : {}),
       rotate: row.rotate,
       size: row.size,
       title: row.title,

@@ -43,6 +43,7 @@ create table if not exists public.board_reports (
   board_id uuid not null references public.boards(id) on delete cascade,
   reporter_id uuid not null references public.profiles(id) on delete cascade,
   target_user_id uuid references public.profiles(id) on delete set null,
+  snag_id text,
   type text not null default 'member' check (type in ('member', 'board', 'snag')),
   details text,
   status text not null default 'open' check (status in ('open', 'reviewed', 'closed')),
@@ -89,12 +90,23 @@ create table if not exists public.board_drawings (
   primary key (board_id, id)
 );
 
+alter table public.board_reports
+  add constraint board_reports_snag_fk
+  foreign key (board_id, snag_id) references public.board_snags(board_id, id) on delete cascade;
+
+alter table public.board_reports
+  add constraint board_reports_snag_type_check check (
+    (type = 'snag' and snag_id is not null)
+    or (type <> 'snag' and snag_id is null)
+  );
+
 create index if not exists board_members_user_id_idx on public.board_members(user_id);
 create index if not exists board_members_board_id_idx on public.board_members(board_id);
 create index if not exists board_member_bans_user_id_idx on public.board_member_bans(user_id);
 create index if not exists board_member_bans_board_id_idx on public.board_member_bans(board_id);
 create index if not exists board_reports_board_id_idx on public.board_reports(board_id);
 create index if not exists board_reports_reporter_id_idx on public.board_reports(reporter_id);
+create index if not exists board_reports_snag_id_idx on public.board_reports(board_id, snag_id) where snag_id is not null;
 create index if not exists boards_owner_id_idx on public.boards(owner_id);
 create index if not exists board_snags_owner_id_idx on public.board_snags(owner_id);
 create index if not exists board_drawings_owner_id_idx on public.board_drawings(owner_id);
@@ -396,6 +408,16 @@ to authenticated
 with check (
   reporter_id = (select auth.uid())
   and private.is_board_member(board_reports.board_id, (select auth.uid()))
+  and (
+    type <> 'snag'
+    or exists (
+      select 1
+      from public.board_snags
+      where board_snags.board_id = board_reports.board_id
+        and board_snags.id = board_reports.snag_id
+        and board_snags.owner_id = board_reports.target_user_id
+    )
+  )
 );
 
 create policy "board_snags_select_members"

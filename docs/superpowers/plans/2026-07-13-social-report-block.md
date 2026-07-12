@@ -22,7 +22,7 @@
 
 **Files:**
 - Create: `docs/supabase/content-report-migration.sql`
-- Modify: `src/data/boards.ts`
+- Modify: `src/utils/boards.ts`
 - Modify: `scripts/boards.test.mjs`
 - Test: `scripts/social-board-service.test.mjs`
 
@@ -32,7 +32,7 @@
 
 - [ ] Write tests proving only open `snag` reports with a Snag ID are converted to hidden IDs, and proving the migration adds the column plus an authenticated-member insert policy.
 - [ ] Run `node --test scripts/boards.test.mjs scripts/social-board-service.test.mjs` and confirm the new assertions fail.
-- [ ] Implement the pure mapper and SQL migration with `snag_id uuid references public.board_snags(id) on delete cascade`.
+- [ ] Implement the pure mapper and SQL migration with `snag_id text` plus a `(board_id, snag_id)` foreign key to `public.board_snags(board_id, id)`.
 - [ ] Run the focused tests and confirm they pass.
 - [ ] Commit the schema and mapping unit.
 

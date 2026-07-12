@@ -363,13 +363,24 @@ describe('menu source layout', () => {
 
     assert.match(source, /canManageBoardMember/);
     assert.match(source, /Make Owner/);
-    assert.match(source, /Kick/);
+    assert.match(source, /Block from board/);
     assert.match(source, /Report/);
-    assert.doesNotMatch(source, /Block/);
     assert.match(source, /onMakeOwner/);
     assert.match(source, /onKickMember/);
     assert.match(source, /onReportMember/);
     assert.doesNotMatch(source, /onBlockMember/);
+  });
+
+  it('offers a report confirmation for another member\'s board snag', () => {
+    const appSourceSlice = getFunctionSource('SnagApp', 'clampDrawingValue');
+    const boardSource = getFunctionSource('BoardView', 'BoardGrid');
+
+    assert.match(appSourceSlice, /boardSnagReportTarget/);
+    assert.match(appSourceSlice, /handleReportBoardSnag/);
+    assert.match(appSourceSlice, /reportSocialBoardSnagAsync/);
+    assert.match(appSourceSlice, /BoardReportSnagDialog/);
+    assert.match(boardSource, /accessibilityLabel="Report board snag"/);
+    assert.match(boardSource, /item\.ownerId !== currentMemberId/);
   });
 
   it('passes Free social limit state into the board lobby and board actions', () => {

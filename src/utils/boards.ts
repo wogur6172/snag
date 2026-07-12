@@ -115,6 +115,12 @@ export type BoardMemberListItem = {
   role: 'Member' | 'Owner';
 };
 
+export type BoardSnagReportRow = {
+  snag_id?: string | null;
+  status?: string | null;
+  type?: string | null;
+};
+
 function getBoardColor(index: number) {
   const safeIndex = Math.max(0, Math.floor(index));
 
@@ -507,10 +513,27 @@ export function getBoardLeaveConfirmationCopy({ roomTitle }: { roomTitle: string
 export function getBoardMemberActionCopy({ memberLabel }: { memberLabel: string }) {
   return {
     cancelLabel: 'Cancel',
-    confirmLabel: 'Remove',
-    message: "They won't be able to rejoin with this invite.",
-    title: `Remove ${memberLabel} from this board?`,
+    confirmLabel: 'Block',
+    message: "They'll be removed and won't be able to rejoin with this invite.",
+    title: `Block ${memberLabel} from this board?`,
   };
+}
+
+export function getBoardSnagReportCopy() {
+  return {
+    cancelLabel: 'Cancel',
+    confirmLabel: 'Report',
+    message: 'This Snag will be hidden for you and sent to Snag for review.',
+    title: 'Report this Snag?',
+  };
+}
+
+export function getReportedBoardSnagIds(rows: BoardSnagReportRow[]) {
+  return Array.from(new Set(rows.flatMap((row) => (
+    row.type === 'snag' && row.status === 'open' && row.snag_id?.trim()
+      ? [row.snag_id.trim()]
+      : []
+  ))));
 }
 
 export function getBoardMemberReportCopy({ memberLabel }: { memberLabel: string }) {

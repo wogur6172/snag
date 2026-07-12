@@ -29,7 +29,7 @@ Add the smallest clear safety flow needed for Snag Board's invitation-only user-
 ## Security
 
 - Keep all authorization in RLS: only a current board member may create a report and `reporter_id` must equal `auth.uid()`.
-- Add a dedicated `snag_id` column to reports instead of trusting free-form `details` for filtering.
+- Add a dedicated text `snag_id` column and a `(board_id, snag_id)` foreign key to reports instead of trusting free-form `details` for filtering.
 - The client never supplies another reporter identity.
 
 ## Verification

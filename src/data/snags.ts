@@ -26,6 +26,7 @@ export type SnagItem = {
   previewUri?: string;
   layerIndex?: number;
   originSnagId?: string;
+  ownerId?: string;
   pendingSync?: boolean;
   rotate: string;
   size: number;

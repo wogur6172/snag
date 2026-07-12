@@ -1,6 +1,7 @@
 import type { SnagDrawingStroke, SnagItem } from '../data/snags.ts';
 import {
   type BoardRoom,
+  getReportedBoardSnagIds,
 } from '../utils/boards.ts';
 import { normalizeProfileDisplayName } from '../utils/snag-library.ts';
 import {
@@ -412,7 +413,7 @@ export async function loadJoinedSocialBoardsAsync({
     };
   }
 
-  const [roomResult, memberResult, snagResult, strokeResult] = await Promise.all([
+  const [roomResult, memberResult, snagResult, strokeResult, reportResult] = await Promise.all([
     client
       .from('boards')
       .select('id,code,title,color,owner_id,created_at,updated_at')
@@ -433,6 +434,14 @@ export async function loadJoinedSocialBoardsAsync({
       .select('id,board_id,owner_id,color,width,points,layer_index')
       .in('board_id', roomIds)
       .throwOnError(),
+    client
+      .from('board_reports')
+      .select('snag_id,type,status')
+      .eq('reporter_id', currentMemberId)
+      .eq('type', 'snag')
+      .eq('status', 'open')
+      .in('board_id', roomIds)
+      .throwOnError(),
   ]);
   const memberRows = (memberResult.data ?? []) as SocialBoardMemberRow[];
   const profileRows = await loadSocialProfileRowsForMembersAsync({
@@ -446,7 +455,10 @@ export async function loadJoinedSocialBoardsAsync({
     profileRows,
     roomRows: (roomResult.data ?? []) as SocialBoardRoomRow[],
   });
-  const snagRowsByRoomId = groupByRoomId((snagResult.data ?? []) as SocialBoardSnagRow[]);
+  const reportedSnagIds = new Set(getReportedBoardSnagIds(reportResult.data ?? []));
+  const visibleSnagRows = ((snagResult.data ?? []) as SocialBoardSnagRow[])
+    .filter((row) => !reportedSnagIds.has(row.id));
+  const snagRowsByRoomId = groupByRoomId(visibleSnagRows);
   const strokeRowsByRoomId = groupByRoomId((strokeResult.data ?? []) as SocialBoardStrokeRow[]);
   const snagsByRoomEntries = await Promise.all(rooms.map(async (room) => [
     room.id,
@@ -788,6 +800,38 @@ export async function reportSocialBoardMemberAsync({
       reporter_id: currentMemberId,
       target_user_id: targetMemberId,
       type: 'member',
+    })
+    .throwOnError();
+}
+
+export async function reportSocialBoardSnagAsync({
+  client = null,
+  currentMemberId,
+  nowIso = getNowIso(),
+  roomId,
+  snagId,
+  targetMemberId,
+}: {
+  client?: SocialSupabaseClient;
+  currentMemberId: string;
+  nowIso?: string;
+  roomId: string;
+  snagId: string;
+  targetMemberId: string;
+}) {
+  if (!client || currentMemberId === targetMemberId) {
+    return;
+  }
+
+  await client
+    .from('board_reports')
+    .insert({
+      board_id: roomId,
+      created_at: nowIso,
+      reporter_id: currentMemberId,
+      snag_id: snagId,
+      target_user_id: targetMemberId,
+      type: 'snag',
     })
     .throwOnError();
 }

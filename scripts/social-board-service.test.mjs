@@ -9,6 +9,7 @@ import {
   loadJoinedSocialBoardsAsync,
   loadOrCreateSocialProfileAsync,
   reportSocialBoardMemberAsync,
+  reportSocialBoardSnagAsync,
   transferSocialBoardOwnerAsync,
   updateSocialProfileDisplayNameAsync,
   deleteSocialBoardRoomAsync,
@@ -50,6 +51,16 @@ describe('social board service fallback', () => {
     assert.match(schema, /private\.get_board_snag_count\(board_snags\.board_id\) < 60/);
     assert.match(schema, /file_size_limit[^;]*1048576/s);
     assert.match(schema, /allowed_mime_types[^;]*image\/webp/s);
+  });
+
+  it('adds a typed snag reference for content reports without broadening report access', () => {
+    const migration = readFileSync(new URL('../docs/supabase/content-report-migration.sql', import.meta.url), 'utf8');
+
+    assert.match(migration, /add column if not exists snag_id text/);
+    assert.match(migration, /foreign key \(board_id, snag_id\) references public\.board_snags\(board_id, id\) on delete cascade/);
+    assert.match(migration, /reporter_id = \(select auth\.uid\(\)\)/);
+    assert.match(migration, /private\.is_board_member\(board_reports\.board_id, \(select auth\.uid\(\)\)\)/);
+    assert.match(migration, /board_reports_snag_id_idx/);
   });
 
   it('creates a local social profile when Supabase is not configured', async () => {
@@ -384,6 +395,100 @@ describe('social board service fallback', () => {
         table: 'board_reports',
       },
     ]);
+  });
+
+  it('reports a board snag with its typed content id and owner', async () => {
+    const calls = [];
+    const client = {
+      from: (table) => ({
+        insert: (payload) => ({
+          throwOnError: async () => {
+            calls.push({ payload, table });
+          },
+        }),
+      }),
+    };
+
+    await reportSocialBoardSnagAsync({
+      client,
+      currentMemberId: 'profile-reporter',
+      nowIso: '2024-03-09T16:00:00.000Z',
+      roomId: 'board-1',
+      snagId: 'snag-problem',
+      targetMemberId: 'profile-problem',
+    });
+
+    assert.deepEqual(calls, [{
+      payload: {
+        board_id: 'board-1',
+        created_at: '2024-03-09T16:00:00.000Z',
+        reporter_id: 'profile-reporter',
+        snag_id: 'snag-problem',
+        target_user_id: 'profile-problem',
+        type: 'snag',
+      },
+      table: 'board_reports',
+    }]);
+  });
+
+  it('does not send reported board snag images through the display mapping pipeline', async () => {
+    const selectedTables = [];
+    const dataByTable = {
+      board_drawings: [],
+      board_members: [
+        { board_id: 'board-1', joined_at: '2024-03-09T16:01:00.000Z', role: 'owner', user_id: 'profile-host' },
+        { board_id: 'board-1', joined_at: '2024-03-09T16:02:00.000Z', role: 'member', user_id: 'profile-jae' },
+      ],
+      board_reports: [{ snag_id: 'snag-hidden', status: 'open', type: 'snag' }],
+      board_snags: [
+        {
+          board_id: 'board-1', canvas_x: 10, canvas_y: 10, created_at: '2024-03-09T16:03:00.000Z',
+          id: 'snag-visible', image_path: 'board-1/previews/snag-visible.webp', owner_id: 'profile-host',
+          rotate: '0deg', size: 120, title: 'Visible',
+        },
+        {
+          board_id: 'board-1', canvas_x: 20, canvas_y: 20, created_at: '2024-03-09T16:04:00.000Z',
+          id: 'snag-hidden', image_path: 'board-1/previews/snag-hidden.webp', owner_id: 'profile-host',
+          rotate: '0deg', size: 120, title: 'Hidden',
+        },
+      ],
+      boards: [{
+        code: 'SN1001', color: '#BFEAFF', created_at: '2024-03-09T16:00:00.000Z', id: 'board-1',
+        owner_id: 'profile-host', title: 'Trip board',
+      }],
+      profiles: [],
+    };
+    const signedPaths = [];
+    const client = {
+      from: (table) => ({
+        select: () => {
+          const query = {
+            eq: () => query,
+            in: () => query,
+            throwOnError: async () => {
+              selectedTables.push(table);
+              return { data: dataByTable[table] ?? [] };
+            },
+          };
+          return query;
+        },
+      }),
+      storage: {
+        from: () => ({
+          createSignedUrls: async (paths) => {
+            signedPaths.push(...paths);
+            return { data: paths.map((path) => ({ path, signedUrl: `signed://${path}` })), error: null };
+          },
+          getPublicUrl: (path) => ({ data: { publicUrl: `public://${path}` } }),
+        }),
+      },
+    };
+
+    const snapshot = await loadJoinedSocialBoardsAsync({ client, currentMemberId: 'profile-jae' });
+
+    assert.ok(selectedTables.includes('board_reports'));
+    assert.deepEqual(snapshot.snagsByRoomId['board-1'].map((snag) => snag.id), ['snag-visible']);
+    assert.deepEqual(signedPaths, ['board-1/previews/snag-visible.webp']);
   });
 
   it('batches signed board image URLs when loading many snags', async () => {

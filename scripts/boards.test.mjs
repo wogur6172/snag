@@ -18,6 +18,7 @@ import {
   deleteBoardRoom,
   getBoardMemberReportCopy,
   getBoardMemberActionCopy,
+  getBoardSnagReportCopy,
   getBoardLeaveConfirmationCopy,
   getBoardMemberList,
   getBoardRoomMemberCount,
@@ -34,6 +35,7 @@ import {
   getBoardJoinFailureCopy,
   getBoardEntryLoadingPresentation,
   getRenderableBoardRooms,
+  getReportedBoardSnagIds,
   getBoardMiniMapVisibilityConfig,
   getNextEdgePanOffset,
   getProgressiveBoardSnags,
@@ -488,9 +490,25 @@ describe('social board rooms', () => {
     }), room);
     assert.deepEqual(getBoardMemberActionCopy({ memberLabel: 'Guest 1' }), {
       cancelLabel: 'Cancel',
-      confirmLabel: 'Remove',
-      message: "They won't be able to rejoin with this invite.",
-      title: 'Remove Guest 1 from this board?',
+      confirmLabel: 'Block',
+      message: "They'll be removed and won't be able to rejoin with this invite.",
+      title: 'Block Guest 1 from this board?',
+    });
+  });
+
+  it('keeps only open snag reports with stable snag ids hidden for the reporter', () => {
+    assert.deepEqual(getReportedBoardSnagIds([
+      { snag_id: 'snag-1', status: 'open', type: 'snag' },
+      { snag_id: 'snag-1', status: 'open', type: 'snag' },
+      { snag_id: 'snag-2', status: 'closed', type: 'snag' },
+      { snag_id: null, status: 'open', type: 'snag' },
+      { snag_id: 'snag-3', status: 'open', type: 'member' },
+    ]), ['snag-1']);
+    assert.deepEqual(getBoardSnagReportCopy(), {
+      cancelLabel: 'Cancel',
+      confirmLabel: 'Report',
+      message: 'This Snag will be hidden for you and sent to Snag for review.',
+      title: 'Report this Snag?',
     });
   });
 

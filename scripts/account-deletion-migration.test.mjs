@@ -32,6 +32,8 @@ describe('account deletion migration', () => {
     assert.match(source, /delete from public\.board_member_bans/);
     assert.match(source, /delete from public\.profiles/);
     assert.match(source, /storage\.objects/);
+    assert.match(source, /board_reports\.reporter_id = \$1/);
+    assert.match(source, /board_reports\.target_user_id = \$1/);
   });
 
   test('returns an existing job so retries are idempotent', () => {

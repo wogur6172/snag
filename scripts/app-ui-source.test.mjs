@@ -528,6 +528,23 @@ describe('menu source layout', () => {
     assert.match(appSource, /styles\.captureShutterFlash/);
   });
 
+  it('paints finalizing feedback before exporting the manual mask', () => {
+    const captureStartIndex = appSource.indexOf('function CaptureFlow');
+    const captureEndIndex = appSource.indexOf('function CameraCanvas', captureStartIndex + 1);
+    const captureSource = appSource.slice(captureStartIndex, captureEndIndex);
+    const saveStartIndex = captureSource.indexOf('async function handleSaveRefinedSnag');
+    const saveEndIndex = captureSource.indexOf('async function handleTakePhoto', saveStartIndex + 1);
+
+    assert.notEqual(saveStartIndex, -1, 'manual save handler should exist');
+    assert.notEqual(saveEndIndex, -1, 'photo handler should follow manual save');
+
+    const saveSource = captureSource.slice(saveStartIndex, saveEndIndex);
+
+    assert.match(saveSource, /setCaptureActivity\('finalizing'\);\s*await waitForPaint\(\);[\s\S]*?applyManualCutoutAsync/);
+    assert.match(saveSource, /catch[\s\S]*?setCaptureActivity\('idle'\)/);
+    assert.match(captureSource, /stage === 'refine'[\s\S]*?<CaptureActivityOverlay activity=\{captureActivity\} \/>/);
+  });
+
   it('passes the existing camera flow into collection starter prompts', () => {
     assert.match(appSource, /onOpenCamera=\{handleOpenCameraFlow\}/);
   });

@@ -5337,8 +5337,8 @@ function BrushSizeSlider({
 function CaptureActivityOverlay({ activity }: { activity: CaptureActivity }) {
   const { height: screenHeight } = useWindowDimensions();
   const presentation = getCaptureActivityPresentation(activity);
-  const overlayOpacity = useRef(new Animated.Value(0)).current;
-  const scanProgress = useRef(new Animated.Value(0)).current;
+  const [overlayOpacity] = useState(() => new Animated.Value(0));
+  const [scanProgress] = useState(() => new Animated.Value(0));
   const [reduceMotionEnabled, setReduceMotionEnabled] = useState(false);
 
   useEffect(() => {
@@ -5456,7 +5456,7 @@ function CaptureFlow({
   const cameraPinch = useRef({ distance: 0, zoom: 0 });
   const cameraZoomRef = useRef(0);
   const cameraPermissionRequestStarted = useRef(false);
-  const shutterFlashOpacity = useRef(new Animated.Value(0)).current;
+  const [shutterFlashOpacity] = useState(() => new Animated.Value(0));
   const [permission, requestPermission] = useCameraPermissions();
   const [cameraAvailable, setCameraAvailable] = useState<boolean | null>(Platform.OS !== 'web');
   const [cameraMountError, setCameraMountError] = useState('');
@@ -5728,8 +5728,9 @@ function CaptureFlow({
     }
 
     setIsSavingRefine(true);
+    setCaptureActivity('finalizing');
+    await waitForPaint();
     try {
-      await waitForNextFrame();
       const result = manualMaskPoints.length > 0
         ? await applyManualCutoutAsync(capturedAsset.uri, manualMaskPoints)
         : capturedAsset;
@@ -5743,6 +5744,7 @@ function CaptureFlow({
         width: result.width ?? capturedAsset.width,
       });
     } catch {
+      setCaptureActivity('idle');
       showCutoutNotice('Manual erase could not save. Try again.');
     } finally {
       setIsSavingRefine(false);
@@ -6091,6 +6093,7 @@ function CaptureFlow({
               variant="dark"
             />
           </View>
+          <CaptureActivityOverlay activity={captureActivity} />
         </View>
       )}
     </SafeAreaView>

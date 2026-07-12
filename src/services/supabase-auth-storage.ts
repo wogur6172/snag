@@ -17,6 +17,13 @@ function ensureAuthStorageDirectory() {
 }
 
 export const snagSupabaseAuthStorage = {
+  async clear() {
+    const authDirectory = getAuthStorageDirectory();
+
+    if (authDirectory.exists) {
+      authDirectory.delete();
+    }
+  },
   async getItem(key: string) {
     ensureAuthStorageDirectory();
 

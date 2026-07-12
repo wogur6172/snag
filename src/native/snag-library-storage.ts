@@ -37,6 +37,14 @@ function ensureLibraryStorage() {
   getImageDirectory().create({ idempotent: true, intermediates: true });
 }
 
+export async function clearSnagLibraryStorageAsync() {
+  const libraryDirectory = getLibraryDirectory();
+
+  if (libraryDirectory.exists) {
+    libraryDirectory.delete();
+  }
+}
+
 export function resolvePersistedSnagImage(snag: SnagItem): SnagItem {
   if (snag.kind === 'text' || !snag.imageUri) {
     return snag;

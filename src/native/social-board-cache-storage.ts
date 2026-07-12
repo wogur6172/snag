@@ -22,6 +22,14 @@ function ensureSocialBoardCacheDirectory() {
   getSocialBoardCacheDirectory().create({ idempotent: true, intermediates: true });
 }
 
+export async function clearSocialBoardCacheAsync() {
+  const cacheDirectory = getSocialBoardCacheDirectory();
+
+  if (cacheDirectory.exists) {
+    cacheDirectory.delete();
+  }
+}
+
 export async function loadSocialBoardCacheAsync(): Promise<SocialBoardCacheState | null> {
   ensureSocialBoardCacheDirectory();
 

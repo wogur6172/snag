@@ -200,6 +200,7 @@ import {
   createSnagFromAsset,
   createTextSnag,
   deleteSelectedAllSnags,
+  deleteSnagPlacement,
   deleteSnagCategory,
   getAllCollectionContentHeight,
   getAllCollectionSnagFrame,
@@ -1374,11 +1375,13 @@ function AllCollectionSticker({
 
 function FloatingActionButton({
   accessibilityLabel,
+  destructive = false,
   label,
   onPress,
   style,
 }: {
   accessibilityLabel: string;
+  destructive?: boolean;
   label: string;
   onPress: () => void;
   style?: StyleProp<ViewStyle>;
@@ -1420,7 +1423,7 @@ function FloatingActionButton({
           isInteractive
           tintColor={FLOATING_ACTION_CHROME.tintColor}
           style={styles.pasteButtonGlass}>
-          <Text style={styles.pasteButtonText}>{label}</Text>
+          <Text style={[styles.pasteButtonText, destructive && styles.pasteButtonTextDestructive]}>{label}</Text>
         </GlassView>
       </Pressable>
     </Animated.View>
@@ -2110,7 +2113,10 @@ export default function SnagApp() {
     }
     setStagedSnagId((currentStagedId) => (currentStagedId === snagId ? null : currentStagedId));
     setSelectedAllSnagIds((currentIds) => currentIds.filter((id) => id !== snagId));
-    setSnags((currentSnags) => currentSnags.filter((snag) => snag.id !== snagId));
+    setSnags((currentSnags) => deleteSnagPlacement({
+      snagId,
+      snags: currentSnags,
+    }));
   }
 
   function handleSnagDeleteComplete(snagId: string) {
@@ -2638,6 +2644,23 @@ export default function SnagApp() {
     }
 
     setAllSelectionDeleteDialogOpen(true);
+  }
+
+  function handleOpenAllSnagDelete(snagId: string) {
+    closeDrawingMode();
+    setShowCategoryTray(false);
+    setCollectionOverlayDismissSignal((signal) => signal + 1);
+    setAllSelectionMode(false);
+    setSelectedAllSnagIds([snagId]);
+    setAllSelectionDeleteDialogOpen(true);
+  }
+
+  function handleCancelAllSelectionDelete() {
+    setAllSelectionDeleteDialogOpen(false);
+
+    if (!allSelectionMode) {
+      setSelectedAllSnagIds([]);
+    }
   }
 
   function handleConfirmAllSelectionDelete() {
@@ -3797,6 +3820,7 @@ export default function SnagApp() {
               drawingStrokeColor={drawingStrokeColor}
               drawingsByCategoryId={drawingsByCategoryId}
               onDeleteComplete={handleSnagDeleteComplete}
+              onDeleteAllSnagRequested={handleOpenAllSnagDelete}
               onDeleteSnag={handleDeleteSnag}
               onDrawingStrokeComplete={handleDrawingStrokeComplete}
               onToggleAllSelection={handleToggleAllSnagSelection}
@@ -3934,7 +3958,7 @@ export default function SnagApp() {
         {allSelectionDeleteDialogOpen && (
           <AllSelectionDeleteDialog
             count={selectedAllSnagIds.length}
-            onCancel={() => setAllSelectionDeleteDialogOpen(false)}
+            onCancel={handleCancelAllSelectionDelete}
             onConfirm={handleConfirmAllSelectionDelete}
           />
         )}
@@ -6427,6 +6451,7 @@ function CollectionView({
   drawingStrokeColor,
   drawingsByCategoryId,
   onDeleteComplete,
+  onDeleteAllSnagRequested,
   onDeleteSnag,
   onBackgroundTap,
   onDrawingStrokeComplete,
@@ -6462,6 +6487,7 @@ function CollectionView({
   drawingStrokeColor: string;
   drawingsByCategoryId: Record<string, SnagDrawingStroke[]>;
   onDeleteComplete: (snagId: string) => void;
+  onDeleteAllSnagRequested: (snagId: string) => void;
   onDeleteSnag: (snagId: string) => void;
   onBackgroundTap: () => void;
   onDrawingStrokeComplete: (categoryId: string, stroke: SnagDrawingStroke) => void;
@@ -7203,11 +7229,26 @@ function CollectionView({
     onTextSnagEditRequest(anchor.snagId);
   }
 
+  function handleAllSnagDeletePress() {
+    if (!copyAnchor || copyAnchor.categoryId !== 'all') {
+      return;
+    }
+
+    const snagId = copyAnchor.snagId;
+
+    clearActionAnchors();
+    onDeleteAllSnagRequested(snagId);
+  }
+
   const copyActionPresentation = getCopyActionPresentation({ viewportWidth: width });
   const saveActionPresentation = getCopyActionPresentation({ actionWidth: 132, viewportWidth: width });
   const copyActionShiftedPresentation = {
     ...copyActionPresentation,
     top: copyActionPresentation.top + 52,
+  };
+  const deleteActionPresentation = {
+    ...copyActionPresentation,
+    top: copyActionPresentation.top + 104,
   };
 
   return (
@@ -7423,6 +7464,15 @@ function CollectionView({
             onPress={handleCopyPress}
             style={copyActionShiftedPresentation}
           />
+          {copyAnchor?.categoryId === 'all' && (
+            <FloatingActionButton
+              accessibilityLabel="Delete snag"
+              destructive
+              label="Delete"
+              onPress={handleAllSnagDeletePress}
+              style={deleteActionPresentation}
+            />
+          )}
         </>
       )}
       {!drawingCategoryId && textEditAnchor?.categoryId === selectedCategoryId && (
@@ -10209,6 +10259,9 @@ const styles = StyleSheet.create({
     fontSize: 15,
     lineHeight: 18,
     fontWeight: '700',
+  },
+  pasteButtonTextDestructive: {
+    color: '#FF3B30',
   },
   boardLobby: {
     flex: 1,

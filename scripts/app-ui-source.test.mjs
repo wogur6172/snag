@@ -640,6 +640,29 @@ describe('menu source layout', () => {
     assert.match(collectionSource, /getSaveActionLabel\(\{ confirming: copyAnchor\.saveConfirming === true, saved: copyAnchor\.saved === true \}\)/);
   });
 
+  it('removes custom-category placements without deleting their All master', () => {
+    const appFlowSource = getFunctionSource('SnagApp', 'clampDrawingValue');
+
+    assert.match(appSource, /deleteSnagPlacement,/);
+    assert.match(appFlowSource, /setSnags\(\(currentSnags\) => deleteSnagPlacement\(\{/);
+    assert.match(appFlowSource, /snagId,\n\s+snags: currentSnags,/);
+    assert.match(appFlowSource, /setSnags\(\(currentSnags\) => deleteSelectedAllSnags\(\{/);
+  });
+
+  it('offers full-library deletion from an All snag long press', () => {
+    const appFlowSource = getFunctionSource('SnagApp', 'clampDrawingValue');
+    const collectionSource = getFunctionSource('CollectionView', 'clampDrawingValue');
+
+    assert.match(appFlowSource, /function handleOpenAllSnagDelete\(snagId: string\)/);
+    assert.match(appFlowSource, /setSelectedAllSnagIds\(\[snagId\]\)/);
+    assert.match(appFlowSource, /setAllSelectionDeleteDialogOpen\(true\)/);
+    assert.match(collectionSource, /onDeleteAllSnagRequested/);
+    assert.match(collectionSource, /copyAnchor\?\.categoryId === 'all'/);
+    assert.match(collectionSource, /accessibilityLabel="Delete snag"/);
+    assert.match(collectionSource, /label="Delete"/);
+    assert.match(collectionSource, /destructive/);
+  });
+
   it('deletes account data from a small red Settings action without terminating the app', () => {
     const settingsSource = getFunctionSource('SettingsOverlay', 'CategoryBackgroundPicker');
     const appFlowSource = getFunctionSource('SnagApp', 'CategoryTray');

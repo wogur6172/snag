@@ -13,6 +13,7 @@ import {
   createSnagFromAsset,
   createTextSnag,
   deleteSelectedAllSnags,
+  deleteSnagPlacement,
   deleteSnagCategory,
   getCategoryIdFromPageOffset,
   getCategoryPageIndex,
@@ -807,6 +808,150 @@ describe('real snag items', () => {
     assert.deepEqual(
       getSnagsForCategory({ categoryId: 'category-food', snags }).map((snag) => snag.imageUri),
       ['file:///b.png', 'file:///b-copy.png'],
+    );
+  });
+
+  it('shows exactly one All master for an original and all of its category copies', () => {
+    const original = createSnagFromAsset({
+      asset: { uri: 'file:///original.png' },
+      categoryId: 'category-pets',
+      createdAt: 10,
+      index: 0,
+    });
+    const hiddenCopy = createSnagFromAsset({
+      asset: { uri: 'file:///hidden-copy.png' },
+      categoryId: 'category-friends',
+      createdAt: 11,
+      excludeFromAll: true,
+      index: 1,
+      originSnagId: original.id,
+    });
+    const legacyVisibleCopy = createSnagFromAsset({
+      asset: { uri: 'file:///legacy-visible-copy.png' },
+      categoryId: 'category-things',
+      createdAt: 12,
+      index: 2,
+      originSnagId: original.id,
+    });
+
+    assert.deepEqual(
+      getSnagsForCategory({
+        categoryId: 'all',
+        snags: [original, hiddenCopy, legacyVisibleCopy],
+      }).map((snag) => snag.id),
+      [original.id],
+    );
+  });
+
+  it('promotes one surviving legacy category copy into All when its original is missing', () => {
+    const firstCopy = createSnagFromAsset({
+      asset: { uri: 'file:///first-copy.png' },
+      categoryId: 'category-pets',
+      createdAt: 20,
+      excludeFromAll: true,
+      index: 0,
+      originSnagId: 'missing-master',
+    });
+    const secondCopy = createSnagFromAsset({
+      asset: { uri: 'file:///second-copy.png' },
+      categoryId: 'category-friends',
+      createdAt: 21,
+      excludeFromAll: true,
+      index: 1,
+      originSnagId: 'missing-master',
+    });
+
+    assert.deepEqual(
+      getSnagsForCategory({
+        categoryId: 'all',
+        snags: [firstCopy, secondCopy],
+      }).map((snag) => snag.id),
+      [firstCopy.id],
+    );
+  });
+
+  it('keeps a master in All after its final custom-category placement is deleted', () => {
+    const onlyPlacement = createSnagFromAsset({
+      asset: { uri: 'file:///only-placement.png' },
+      categoryId: 'category-pets',
+      createdAt: 30,
+      index: 0,
+    });
+
+    const nextSnags = deleteSnagPlacement({
+      snagId: onlyPlacement.id,
+      snags: [onlyPlacement],
+    });
+
+    assert.equal(nextSnags.length, 1);
+    assert.equal(nextSnags[0].category, 'all');
+    assert.equal(nextSnags[0].excludeFromAll, undefined);
+    assert.deepEqual(
+      getSnagsForCategory({ categoryId: 'all', snags: nextSnags }).map((snag) => snag.id),
+      [onlyPlacement.id],
+    );
+  });
+
+  it('removes a category copy while its master remains available in All', () => {
+    const original = createSnagFromAsset({
+      asset: { uri: 'file:///master.png' },
+      categoryId: 'all',
+      createdAt: 40,
+      index: 0,
+    });
+    const copy = createSnagFromAsset({
+      asset: { uri: 'file:///master-copy.png' },
+      categoryId: 'category-pets',
+      createdAt: 41,
+      excludeFromAll: true,
+      index: 1,
+      originSnagId: original.id,
+    });
+
+    const nextSnags = deleteSnagPlacement({
+      snagId: copy.id,
+      snags: [original, copy],
+    });
+
+    assert.deepEqual(nextSnags.map((snag) => snag.id), [original.id]);
+    assert.deepEqual(
+      getSnagsForCategory({ categoryId: 'all', snags: nextSnags }).map((snag) => snag.id),
+      [original.id],
+    );
+  });
+
+  it('preserves one All master when deleting a category containing duplicate placements', () => {
+    const firstPlacement = createSnagFromAsset({
+      asset: { uri: 'file:///category-master.png' },
+      categoryId: 'category-pets',
+      createdAt: 50,
+      index: 0,
+    });
+    const duplicatePlacement = createSnagFromAsset({
+      asset: { uri: 'file:///category-master-copy.png' },
+      categoryId: 'category-pets',
+      createdAt: 51,
+      excludeFromAll: true,
+      index: 1,
+      originSnagId: firstPlacement.id,
+    });
+    const categories = [
+      { id: 'category-pets', title: 'Pets' },
+      { id: 'all', title: 'All' },
+    ];
+
+    const nextLibrary = deleteSnagCategory({
+      categories,
+      categoryId: 'category-pets',
+      selectedCategoryId: 'category-pets',
+      snags: [firstPlacement, duplicatePlacement],
+    });
+
+    assert.equal(nextLibrary.snags.length, 1);
+    assert.equal(nextLibrary.snags[0].category, 'all');
+    assert.deepEqual(
+      getSnagsForCategory({ categoryId: 'all', snags: nextLibrary.snags }).map((snag) => snag.id),
+      [duplicatePlacement.id],
     );
   });
 

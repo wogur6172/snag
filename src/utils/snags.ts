@@ -1020,15 +1020,21 @@ export function deleteSnagCategory({
 
   const nextCategories = categories.filter((category) => category.id !== categoryId);
   const fallbackCategoryId = nextCategories.find((category) => category.id !== 'all')?.id ?? 'all';
+  const categorySnagIds = snags
+    .filter((snag) => snag.category === categoryId)
+    .map((snag) => snag.id);
+  const nextSnags = categorySnagIds.reduce(
+    (currentSnags, snagId) => deleteSnagPlacement({
+      snagId,
+      snags: currentSnags,
+    }),
+    snags,
+  );
 
   return {
     categories: nextCategories,
     selectedCategoryId: selectedCategoryId === categoryId ? fallbackCategoryId : selectedCategoryId,
-    snags: snags.map((snag) => (
-      snag.category === categoryId
-        ? { ...snag, category: 'all' }
-        : snag
-    )),
+    snags: nextSnags,
   };
 }
 
@@ -1099,19 +1105,13 @@ export function getCategoryIdFromPageOffset({
   return categories[index].id;
 }
 
-export function getSnagsForCategory<T extends { category: string }>({
-  categoryId,
-  snags,
-}: {
-  categoryId: string;
-  snags: T[];
-}) {
-  if (categoryId === 'all') {
-    return snags.filter((snag) => !(snag as T & { excludeFromAll?: boolean }).excludeFromAll);
-  }
-
-  return snags.filter((snag) => snag.category === categoryId);
-}
+type SnagIdentityItem = {
+  category: string;
+  excludeFromAll?: boolean;
+  id: string;
+  kind?: 'image' | 'text';
+  originSnagId?: string;
+};
 
 function getSnagRootId<T extends { id: string; originSnagId?: string }>(
   snag: T,
@@ -1132,6 +1132,109 @@ function getSnagRootId<T extends { id: string; originSnagId?: string }>(
   }
 
   return currentSnag.id;
+}
+
+function getAllSnagRepresentativePriority(
+  snag: SnagIdentityItem,
+  rootId: string,
+) {
+  if (snag.id === rootId) {
+    return 3;
+  }
+
+  return snag.excludeFromAll ? 1 : 2;
+}
+
+function getAllSnagRepresentatives<T extends SnagIdentityItem>(snags: T[]) {
+  const snagsById = new Map(snags.map((snag) => [snag.id, snag]));
+  const representativesByRootId = new Map<string, T>();
+
+  snags.forEach((snag) => {
+    if (snag.kind === 'text' || (snag.excludeFromAll && !snag.originSnagId)) {
+      return;
+    }
+
+    const rootId = getSnagRootId(snag, snagsById);
+    const currentRepresentative = representativesByRootId.get(rootId);
+
+    if (
+      !currentRepresentative ||
+      getAllSnagRepresentativePriority(snag, rootId) >
+        getAllSnagRepresentativePriority(currentRepresentative, rootId)
+    ) {
+      representativesByRootId.set(rootId, snag);
+    }
+  });
+
+  return [...representativesByRootId.values()];
+}
+
+export function getSnagsForCategory<T extends { category: string }>({
+  categoryId,
+  snags,
+}: {
+  categoryId: string;
+  snags: T[];
+}) {
+  if (categoryId === 'all') {
+    const hasStableIdentity = snags.every((snag) => (
+      typeof (snag as T & { id?: unknown }).id === 'string'
+    ));
+
+    if (hasStableIdentity) {
+      return getAllSnagRepresentatives(snags as (T & SnagIdentityItem)[]) as T[];
+    }
+
+    return snags.filter((snag) => !(snag as T & { excludeFromAll?: boolean }).excludeFromAll);
+  }
+
+  return snags.filter((snag) => snag.category === categoryId);
+}
+
+export function deleteSnagPlacement<T extends SnagIdentityItem>({
+  snagId,
+  snags,
+}: {
+  snagId: string;
+  snags: T[];
+}) {
+  const targetSnag = snags.find((snag) => snag.id === snagId);
+
+  if (!targetSnag || targetSnag.category === 'all') {
+    return snags;
+  }
+
+  if (targetSnag.kind === 'text') {
+    return snags.filter((snag) => snag.id !== snagId);
+  }
+
+  const snagsById = new Map(snags.map((snag) => [snag.id, snag]));
+  const rootId = getSnagRootId(targetSnag, snagsById);
+  const familyIds = new Set(
+    snags
+      .filter((snag) => snag.kind !== 'text' && getSnagRootId(snag, snagsById) === rootId)
+      .map((snag) => snag.id),
+  );
+  const remainingSnags = snags.filter((snag) => snag.id !== snagId);
+  const hasRemainingPlacement = remainingSnags.some((snag) => familyIds.has(snag.id));
+
+  if (hasRemainingPlacement) {
+    return remainingSnags;
+  }
+
+  return snags.map((snag) => {
+    if (snag.id !== snagId) {
+      return snag;
+    }
+
+    const nextMaster = {
+      ...snag,
+      category: 'all',
+    } as T & { excludeFromAll?: boolean };
+
+    delete nextMaster.excludeFromAll;
+    return nextMaster;
+  });
 }
 
 export function deleteSelectedAllSnags<T extends { id: string; originSnagId?: string }>({

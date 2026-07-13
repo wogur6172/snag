@@ -20,12 +20,6 @@ Treat `All` as the permanent master library and custom categories as placements 
 - Deleting from `All` removes the complete master family, including every category placement regardless of size or rotation.
 - Long-pressing an `All` item adds a red `Delete` action. It opens the same warning dialog and uses the same complete-family deletion path as Select mode.
 
-## Swipe Reliability
-
-- Vertical-dominant movement belongs to the category pager.
-- The `All` to Social transition captures only a clearly horizontal gesture.
-- Existing deliberate diagonal horizontal swipes remain supported.
-
 ## Compatibility
 
 - No destructive storage migration is required.
@@ -39,5 +33,4 @@ Treat `All` as the permanent master library and custom categories as placements 
 - `All` deletion removes every member of the master family.
 - Legacy copies with a missing parent still produce one `All` representative.
 - Text Snags remain excluded.
-- Vertical-dominant gestures do not activate the Social transition.
 - Long-press `Delete` uses the existing destructive confirmation dialog.

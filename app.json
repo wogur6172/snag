@@ -8,7 +8,7 @@
     "scheme": "snag",
     "userInterfaceStyle": "automatic",
     "ios": {
-      "icon": "./assets/expo.icon",
+      "icon": "./assets/images/icon.png",
       "bundleIdentifier": "app.getsnag.snag",
       "infoPlist": {
         "NSCameraUsageDescription": "Allow Snag to use your camera to capture objects for your collection.",
